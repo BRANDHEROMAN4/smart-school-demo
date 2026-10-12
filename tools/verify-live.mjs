@@ -342,6 +342,58 @@ const whoami = async (tok) => {
       { method: "DELETE", headers: H(dir) });
   }
 
+  /* ---------- ⑪ النقاط: أوّل كتابة لها — بالصفّ الذي يبنيه العميل حرفيًّا ----------
+     كانت تُقرأ ولا تُكتب. وهنا لا نقيس «هل سياسة grades تعمل؟» بل **هل الصفّ
+     الذي يبنيه `rowFor` فعلًا يمرّ على الخادم الحقيقي؟** — بلا school_id وبلا
+     recorded_by، وبـ`on_conflict` نفسه. وهذا بعينه صنف القياس الذي أخفى 42P10
+     طويلًا: اختبارٌ يُرسل صفًّا آخر ينجح دائمًا ولا يُثبت شيئًا. */
+  console.log("\n▸ ⑪ كتابة النقاط من دفتر المعلّمة");
+  if (!tea) {
+    no("لا حساب معلّمة في roster.csv — تُخطّي إثبات كتابة النقاط");
+  } else {
+    const stuRow = await get("students", "select=id&limit=1", stu);
+    const sid = (stuRow.body || [])[0]?.id;
+    chk(!!sid, "عُثر على uuid التلميذة على الخادم", JSON.stringify(stuRow.body).slice(0, 140));
+
+    const LABEL = "إثبات آلي — يمكن حذفه";
+    const gid = "vg-" + Date.now().toString(36);
+    const grow = { student_id: sid, subject: "الرياضيات", term: 1, label: LABEL,
+                   kind: "summative", mark: 8.5, client_id: gid };
+    const put = (row, tok) => fetch(`${URL_}/rest/v1/grades?on_conflict=student_id,subject,term,label`, {
+      method: "POST",
+      headers: { ...H(tok), Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(row),
+    });
+
+    const g1 = await put(grow, tea);
+    const g1b = await g1.json().catch(() => null);
+    chk(g1.status === 201 && g1b?.length === 1,
+        "المعلّمة تُدخل نقطةً — الصفّ كما يبنيه العميل بالضبط (بلا school_id ولا recorded_by)",
+        `HTTP ${g1.status} · ${JSON.stringify(g1b).slice(0, 160)}`);
+    if (g1b?.length === 1) {
+      chk(!!g1b[0].school_id, "وschool_id وُسم من الخادم لا من العميل");
+      chk(g1b[0].recorded_by === await whoami(tea), "وrecorded_by وُسم من الجلسة — لا يُنتحَل اسم الكاتب");
+      chk(Number(g1b[0].mark) === 8.5, "والنقطة كما أُدخلت");
+    }
+
+    const g2 = await put({ ...grow, mark: 9.5 }, tea);
+    chk(g2.status === 201 || g2.status === 200,
+        "وإعادة الإرسال بعد انقطاع تُحدِّث لا تُكرّر", `HTTP ${g2.status}`);
+    const after = await get("grades", `select=id,mark&client_id=eq.${gid}`, tea);
+    chk((after.body || []).length === 1, "فصفّ واحد فقط في القاعدة بعد الإرسالين");
+    chk(Number((after.body || [])[0]?.mark) === 9.5, "والنقطة صارت الجديدة (تعديل لا إهمال)");
+
+    /* التلميذة: الصفّ نفسه سليم، وترفضه السياسة لأنّها ليست معلّمة. */
+    const girl = await put({ ...grow, label: LABEL + " (من التلميذة)", client_id: gid + "-s" }, stu);
+    chk(girl.status === 403, "والتلميذة لا تكتب نقاطها على الخادم الحقيقي", `HTTP ${girl.status}`);
+
+    if (!KEEP) {
+      const d1 = await fetch(`${URL_}/rest/v1/grades?client_id=eq.${encodeURIComponent(gid)}`, { method: "DELETE", headers: H(dir) });
+      const d2 = await fetch(`${URL_}/rest/v1/grades?client_id=eq.${encodeURIComponent(gid + "-s")}`, { method: "DELETE", headers: H(dir) });
+      ok(`حُذف أثر الإثبات (${d1.status}/${d2.status}) — والدفتر عاد كما كان`);
+    }
+  }
+
   console.log("\n" + "─".repeat(64));
   console.log(`\x1b[1m${pass} نجح · ${fail} فشل\x1b[0m`);
   console.log(fail === 0
