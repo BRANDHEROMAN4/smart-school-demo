@@ -182,6 +182,11 @@ async function main() {
   console.log("\n▸ سياسة الاحتفاظ (١٨٠ يومًا)");
   await testRetention(db);
 
+  /* يُشغَّل **أخيرًا** عن قصد: يُضيف صفوف نقاط، فيُفسد أيّ عدٍّ لاحق لها.
+     وترتيب الاختبارات جزءٌ من صحّتها لا تفصيل. */
+  console.log("\n▸ النقاط: أوّل كتابة لها من دفتر المعلّمة");
+  await testGradesWrite(db);
+
   await db.end();
 
   // ---------------------------------------------------------- الحصيلة
@@ -779,6 +784,101 @@ async function testRetention(db) {
       () => db.query(`update behaviour_notes set reply='اعتراض متأخّر جدًا'
                       where id='44444444-4444-4444-4444-444444444404'`),
       "لا اعتراض على ملاحظة مؤرشفة"
+    );
+  });
+}
+
+/* ══════════════════ النقاط: أوّل كتابة لها ══════════════════
+   كانت النقاط تُبذَر على الخادم وتُقرأ في الواجهة **ولا تُكتب إليه أبدًا**:
+   يُدخل المعلّم نقطةً فتبقى في جهازه ويظنّها محفوظة. والسؤال الذي يُثبته هذا
+   الاختبار ليس «هل تعمل سياسة grades؟» بل **«هل الصفّ الذي يبنيه العميل
+   حرفيًّا في rowFor يمرّ فعلًا؟»** — ولذلك نكتبه كما يُكتب هناك بالضبط:
+   بلا `school_id` وبلا `recorded_by`، وبـ`on conflict` نفسه الذي ينفّذه الطابور.
+
+   والدرس المدفوع: اختبارٌ يقيس صفًّا **مختلفًا** عن صفّ الكود ينجح دائمًا
+   ويُخفي العطل — كما أخفى 42P10 طويلًا لأن الحيّ كان يُرسل POST عاديًّا
+   والعميل يُرسل on_conflict. */
+async function testGradesWrite(db) {
+  /* مادة **خارج البذرة** عمدًا: البذرة تحمل (الرياضيات · الفصل ١ · «فرض 1»)
+     لأمينة. ولو استعملناها لَما كان الإدراج إدراجًا، بل `on conflict` على صفّ
+     البذرة — فيبدو الاختبار ناجحًا وهو يقيس التحديث لا الإدراج، ويُخفي أنّ
+     `recorded_by` لم يُوسَم (صفّ البذرة كُتب بصلاحية الخادم حيث لا جلسة).
+     وهو نفس صنف الخطأ الذي أخفى 42P10: قياسُ صفٍّ غير صفّ الكود. */
+  const SUBJ = "التربية الفنية";
+  await as(db, S.uTeacher, async () => {
+    /* ① الإدراج: صفّ العميل نفسه — والمعرّفان يُوسَمهما الخادم. */
+    await allowed(
+      () => db.query(`insert into grades (student_id,subject,term,label,kind,mark,client_id)
+                      values ($1,$2,1,'فرض 1','summative',8.5,$3)
+                      on conflict (student_id,subject,term,label)
+                      do update set mark=excluded.mark, kind=excluded.kind, client_id=excluded.client_id`,
+                     [S.amina, SUBJ, "cid-grade-1"]),
+      "المعلّمة تُدخل نقطة — الصفّ كما يبنيه العميل بالضبط (بلا school_id ولا recorded_by)"
+    );
+    const g = await db.query(`select school_id,recorded_by,mark,term from grades where client_id='cid-grade-1'`);
+    eq(g.rows[0].school_id, S.school, "وschool_id وُسم من الخادم لا من العميل");
+    eq(g.rows[0].recorded_by, S.uTeacher, "وrecorded_by وُسم من الجلسة — لا يُنتحَل اسم الكاتب");
+    eq(Number(g.rows[0].mark), 8.5, "والنقطة كما أُدخلت");
+    eq(g.rows[0].term, 1, "والفصل 1 كما أرسله المعبر (الواجهة ٠ ⇒ القاعدة ١)");
+
+    /* ② إعادة الإرسال بعد انقطاع: **تحديث** لا نسخة ثانية — وهذا بعينه ما
+          يجعل الطابور آمنًا. لولاه لأنشأ كل انقطاع نقطةً مكرّرة. */
+    await allowed(
+      () => db.query(`insert into grades (student_id,subject,term,label,kind,mark,client_id)
+                      values ($1,$2,1,'فرض 1','summative',9.5,$3)
+                      on conflict (student_id,subject,term,label)
+                      do update set mark=excluded.mark`,
+                     [S.amina, SUBJ, "cid-grade-1"]),
+      "وإعادة إرسال التسمية نفسها تُصحّح النقطة لا تُنشئ ثانية"
+    );
+    eq(await count(db, `select count(*)::int n from grades
+                        where subject=$1 and label='فرض 1' and student_id=$2`, [SUBJ, S.amina]), 1,
+       "فلا صفّ مكرّر — القيد الطبيعي هو ما يجعل upsert الطابور آمنًا");
+    eq(Number((await db.query(`select mark from grades where client_id='cid-grade-1'`)).rows[0].mark), 9.5,
+       "والنقطة صارت الجديدة (تعديل لا إهمال)");
+
+    /* ③ الفصل لا يُدهَس: نقطة الفصل الثاني تُحفظ في الفصل الثاني.
+          لو أُغفل الفصل في مفتاح الدفتر لطوت هذه النقطةُ نقطةَ الفصل الأول. */
+    await allowed(
+      () => db.query(`insert into grades (student_id,subject,term,label,kind,mark)
+                      values ($1,$2,2,'فرض 1','summative',7)
+                      on conflict (student_id,subject,term,label) do update set mark=excluded.mark`,
+                     [S.amina, SUBJ]),
+      "ونقطة الفصل الثاني تُحفظ في الفصل الثاني"
+    );
+    const t1 = await db.query(`select mark from grades where student_id=$1 and subject=$2 and term=1`, [S.amina, SUBJ]);
+    eq(t1.rows.length, 1, "ولا تُنشئ صفًّا ثانيًا في الفصل الأول");
+    eq(Number(t1.rows[0].mark), 9.5, "ولا تمسّ نقطة الفصل الأول (٩٫٥ كما هي)");
+    eq(await count(db, `select count(*)::int n from grades where student_id=$1 and subject=$2`, [S.amina, SUBJ]), 2,
+       "فصلان ⇒ صفّان (لا صفّ واحد يطويه الآخر)");
+  });
+
+  /* ④ الرفض الدائم: علامة خارج ٠..١٠ — الخطأ 23514 الذي يُسقِط الصفّ بلا رجعة.
+        نقيس أنّ الخادم يرفضها فعلًا، وإلّا فقصُّ العميل لها ليس حاجةً بل زينة.
+        (لا نستعمل denied() هنا: هي تقبل 42501 وحده — لأنه رفضُ *صاحبةٍ*،
+        وهذا رفضُ *قيمةٍ*. المهمّ أنّ الصفّ لا يمرّ، وأيّهما كان الطريق.) */
+  await as(db, S.uTeacher, async () => {
+    let code = null;
+    try {
+      await db.query(`insert into grades (student_id,subject,term,label,kind,mark)
+                      values ($1,$2,3,'فرض خارج المدى','summative',15)`, [S.amina, SUBJ]);
+    } catch (e) { code = e.code; }
+    eq(code, "23514", "وعلامة فوق ١٠ يرفضها الخادم (23514) — فالعميل يقصّها قبل الإرسال");
+  });
+
+  /* ⑤ والقاعدة تبقى قائمة: من لا يكتب النقاط لا يكتبها ولو كان الصفّ سليمًا. */
+  await as(db, S.uAmina, async () => {
+    await denied(
+      () => db.query(`insert into grades (student_id,subject,term,label,kind,mark)
+                      values ($1,$2,3,'فرض التلميذة','summative',10)`, [S.amina, SUBJ]),
+      "التلميذة لا تكتب نقاطها — ولو كان الصفّ كما يبنيه العميل"
+    );
+  });
+  await as(db, S.uParent, async () => {
+    await denied(
+      () => db.query(`insert into grades (student_id,subject,term,label,kind,mark)
+                      values ($1,$2,3,'من الولي','summative',10)`, [S.amina, SUBJ]),
+      "والولي كذلك"
     );
   });
 }

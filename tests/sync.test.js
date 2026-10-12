@@ -103,7 +103,7 @@ function makeSandbox({ students = [], notes = [], complaints = [], online = true
     `\n;globalThis.__T={SYNC,QUEUE,enqueue,flushQueue,renderSyncChip,toEmail,eduviaLogin,` +
     `buildAccounts,sha256,loadQueue,saveQueue,DEMO_STAFF,DEMO_PIN_STUDENT,newClientId,` +
     `rowFor,NOTE_STATUS_DB,ATT_STATE_DB,cloudIdOf,sidOrNull,hydrate,pendingClientIds,` +
-    `complaintRow,ensureUid,` +
+    `complaintRow,ensureUid,bookKey,bookOf,computeMark,recalcStudent,marksMissing,` +
     /* BOOK و announcements ارتباطان معجميان من النصّ المستخرج ⇒ نُخرجهما
        بقارئ (getter) وإلّا قرأ الاختبار خاصيّةً أخرى غير التي تعدّلها الدوال. */
     `get BOOK(){return BOOK}, get NOTES(){return NOTES}, get announcements(){return announcements},` +
@@ -366,8 +366,12 @@ async function main() {
         { id: "n3", student_id: "a1", category: "تعاون ومساعدة", kind: "pos", body: "نسخة الخادم", subject: "السلوك", noted_on: "2026-10-04", author_name: "أ", reply: null, replied_at: null, status: "open", client_id: "cl-pend" },
       ],
       grades: [
-        { id: "g1", student_id: "a1", subject: "اللغة العربية", label: "فرض 1", kind: "summative", mark: 8 },
-        { id: "g2", student_id: "a1", subject: "اللغة العربية", label: "مشاركة صفّية", kind: "formative", mark: 10 },
+        { id: "g1", student_id: "a1", subject: "اللغة العربية", label: "فرض 1", kind: "summative", mark: 8, term: 1 },
+        { id: "g2", student_id: "a1", subject: "اللغة العربية", label: "مشاركة صفّية", kind: "formative", mark: 10, term: 1 },
+        /* صفٌّ من **الفصل الثاني** به نُثبت أنّ الفصل لا يُدهَس في الأول:
+           كان الدفتر مفتاحه (تلميذة|مادة) بلا فصل، و`term` في القاعدة مقيَّد
+           ١..٣ فلا يرفض الخطأ — بل يحفظه في الفصل الخطأ بهدوء. */
+        { id: "g3", student_id: "a1", subject: "الرياضيات", label: "فرض 2", kind: "summative", mark: 3, term: 2 },
       ],
       attendance: [{ student_id: "a1", day: TODAY, state: "late", at_time: "08:20" }],
       staff: [{ full_name: "السيدة زهية", job_title: "مديرة المؤسسة", class_label: "الإدارة" }],
@@ -415,14 +419,24 @@ async function main() {
     eq(S[0].state, "late", "حالة اليوم من سجلّ الحضور");
     eq(S[0].time, "08:20", "وقت الدخول من الخادم");
 
-    const b = T.BOOK[S[0].id + "|اللغة العربية"];
+    /* الدفتر مفتاحه (تلميذة | فصل | مادة) — والفصل داخل المفتاح مقصود. */
+    const b = T.BOOK[T.bookKey(S[0].id, 0, "اللغة العربية")];
     truthy(b && b.entries.length === 2, "دفتر النقاط بُذر من صفوف الخادم");
     eq(b.entries[0].mark, 8, "العلامة كما هي على الخادم");
     eq(b.entries[1].kind, "formative", "النوع محفوظ (التكويني لا يدخل المعدّل)");
     eq(S[0].marks[0]["اللغة العربية"], 8, "المعدّل محسوب من صفوف الخادم لا مُخمَّن");
-    truthy(!S[0].marksPartial.includes("اللغة العربية"),
+
+    /* الفصل يفصل فعلًا: صفّ الفصل الثاني في خانته، ولا يتسرّب إلى الأولى. */
+    truthy(T.BOOK[T.bookKey(S[0].id, 1, "الرياضيات")], "دفتر مستقلّ للفصل الثاني");
+    eq(S[0].marks[1]["الرياضيات"], 3, "ونقطة الفصل الثاني في خانة الفصل الثاني");
+    eq(S[0].marks[0]["الرياضيات"] === 3, false, "ولا تظهر في الفصل الأول");
+
+    /* «تقدير محلّي» تُشتقّ لحظتها من الدفتر — لا تُخزَّن فتتقادم بعد إدخال نقطة. */
+    truthy(!T.marksMissing(S[0].id, 0).includes("اللغة العربية"),
       "المادة ذات النقاط على الخادم ليست في قائمة «لم تُدخَل»");
-    eq(S[0].marksPartial.length, 6, "الموادّ الستّ الباقية مُعلَنة صراحةً لا ممرَّرة كنقاط رسمية");
+    eq(T.marksMissing(S[0].id, 0).length, 6, "الموادّ الستّ الباقية مُعلَنة صراحةً لا ممرَّرة كنقاط رسمية");
+    eq(T.marksMissing(S[0].id, 1).length, 6, "ولكل فصل قائمته المستقلّة");
+    eq(T.marksMissing(S[0].id, 2).length, 7, "وفصلٌ لم تُدخَل نقاطه: كلّ الموادّ معلَّنة");
 
     const N = T.NOTES;
     eq(N.length, 3, "ملاحظتان من الخادم + الملاحظة المحلّية المعلّقة");
@@ -601,6 +615,32 @@ async function main() {
          "والحضور ⇒ DO UPDATE (يُحدِّث صفّ اليوم فعلًا)");
       eq(!srv.calls[2].opts.ignoreDuplicates, true,
          "والنقاط ⇒ DO UPDATE (تُصحَّح العلامة لا تُهمَل)");
+    }
+
+    /* النقاط: **أوّل كتابة لها**. كانت تُقرأ من الخادم ولا تُكتب إليه أبدًا —
+       يُدخل المعلّم نقطةً فتبقى في جهازه ويظنّها محفوظة. نفحص المعبر نفسه. */
+    {
+      const { T, sandbox } = makeSandbox({ mode: "remote" });
+      sandbox.students.push({ id: 7, cloudId: "u-7", name: "س", cls: "1أ", marks: [], avg: [] });
+
+      const r = T.rowFor("grades", { student_id: 7, subject: "الرياضيات", term: 2,
+                                     label: "فرض 1", kind: "summative", mark: 8.7, client_id: "cg1" });
+      eq(r.term, 3, "الفصل يُحوَّل ٢ → ٣ (الواجهة ٠..٢ والقاعدة ١..٣)");
+      eq(T.rowFor("grades", { student_id: 7, subject: "ر", term: 0, label: "ف", mark: 5 }).term, 1,
+         "والفصل الأول يُرسَل 1 لا 0 — القاعدة تشترط ١..٣ وترفض الصفر");
+      eq(r.mark, 8.7, "العلامة كما هي");
+      eq(T.rowFor("grades", { student_id: 7, subject: "ر", term: 0, label: "ف", mark: 15 }).mark, 10,
+         "وعلامة فوق 10 تُقصّ — القاعدة ترفضها بـ23514 فيُسقَط الصفّ بلا رجعة");
+      eq(T.rowFor("grades", { student_id: 7, subject: "ر", term: 0, label: "ف", mark: 5, kind: "x" }).kind,
+         "summative", "ونوعٌ مجهول يسقط إلى التحصيلي لا إلى قيمة يرفضها نوع الخادم");
+      eq(r.school_id, undefined, "لا school_id من العميل — مشغّل الخادم يشتقّه (منع التزوير)");
+      eq(r.recorded_by, undefined, "ولا recorded_by — يُوسَم الكاتب من الجلسة لا من المتصفّح");
+      eq(r.client_id, "cg1", "والمعرّف المحلّي يمرّ — به تُطوى النسخة الأقدم عند إعادة الإرسال");
+
+      /* تلميذة في هذا الجهاز ولم تُنشأ على الخادم ⇒ لا uuid يُربَط به الصفّ. */
+      sandbox.students.push({ id: 9, cloudId: null, name: "ج", cls: "1أ", marks: [], avg: [] });
+      eq(T.rowFor("grades", { student_id: 9, subject: "ر", term: 0, label: "ف", mark: 5 }), null,
+         "تلميذة بلا uuid ⇒ لا نُرسل صفًّا نعرف أنّ الخادم سيرفضه");
     }
   }
 

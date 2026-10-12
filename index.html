@@ -628,9 +628,25 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
       <div class="actions" style="margin-bottom:12px">
         <select class="sel" id="bkStu" onchange="renderBook()" aria-label="التلميذة"></select>
         <select class="sel" id="bkSubj" onchange="renderBook()" aria-label="المادة"></select>
+        <select class="sel" id="bkTerm" onchange="renderBook()" aria-label="الفصل"></select>
         <select class="sel" id="bkAcc" onchange="setAcc(this.value)" aria-label="طريقة الحساب"></select>
       </div>
       <div id="bkOut"></div>
+      <!-- إدخال تقييم: كان الدفتر يُعرض ولا يُدخَل فيه شيء، والنقاط تُقرأ ولا
+           تُكتب. هذا النموذج هو أول كتابة للنقاط إلى الخادم. -->
+      <div style="margin-top:12px;padding:12px;border:1px dashed var(--line,#dde);border-radius:10px;background:rgba(247,148,30,.06)">
+        <h3 style="margin:0 0 8px;font-size:15px">➕ إدخال تقييم في الدفتر</h3>
+        <div class="actions">
+          <input class="sel" id="bkLabel" placeholder="التسمية — فرض 3…" aria-label="تسمية التقييم">
+          <select class="sel" id="bkKind" aria-label="نوع التقييم">
+            <option value="summative">تحصيلي — يدخل المعدّل ويُحفظ على الخادم</option>
+            <option value="formative">تكويني — لا يدخل المعدّل ولا يُوثَّق</option>
+          </select>
+          <input class="sel" id="bkMark" type="number" min="0" max="10" step="0.5" placeholder="النقطة /10" aria-label="النقطة">
+          <button class="btn primary" onclick="saveBookEntry()">حفظ التقييم</button>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">💡 التسمية نفسها في الفصل نفسه تُعدِّل التقييم القائم لا تُنشئ ثانيًا. والتقييم <b>التكويني يبقى في هذا الجهاز</b> — الوعد أنّه لا يُوثَّق، فلا نرفعه.</div>
+      </div>
     </div>
   </section>
 
@@ -1382,8 +1398,14 @@ function qualLevel(m){return m==null?{label:"—",k:""}:QUAL_LEVELS.find(l=>m>=l
 function accumulator(k){return ACCUMULATORS.find(a=>a.k===k)||ACCUMULATORS[0];}
 function clampMark(m){return Math.max(0,Math.min(10,Math.round(m*10)/10));}
 let BOOK={};
-function bookOf(sid,subj,base){
-  const k=sid+"|"+subj;
+/* مفتاح الدفتر = (تلميذة | فصل | مادة). ووجود **الفصل** في المفتاح ليس تفصيلًا:
+   كان المفتاح (تلميذة|مادة) بلا فصل، والدفتر يُعرض دائمًا للفصل الأول — فلمّا
+   صار الإدخال يكتب إلى الخادم، كان دفتر الفصل الثالث سيُكتب في خانة الفصل
+   الأول. و`term` مقيَّد في القاعدة بين ١ و٣، فما كان الخادم ليرفض الخطأ:
+   **كان سيحفظه بهدوء في الفصل الخطأ** — وهو أسوأ من رفضٍ ظاهر. */
+function bookKey(sid,term,subj){return sid+"|"+term+"|"+subj;}
+function bookOf(sid,subj,base,term){
+  const k=bookKey(sid,term||0,subj);
   if(!BOOK[k])BOOK[k]={acc:"avg",entries:[
     {label:"فرض 1",          mark:clampMark(base+0.6),kind:"summative"},
     {label:"مشاركة صفّية",   mark:clampMark(base+1.2),kind:"formative"},
@@ -1392,24 +1414,68 @@ function bookOf(sid,subj,base){
   ]};
   return BOOK[k];
 }
+/* إعادة حساب مادة/فصل من الدفتر. **المصدر الوحيد** لحساب النقطة: الجلب
+   يستعملها، وإدخال المعلّمة يستعملها — فلا يوجد طريقان يفترقان في يومٍ ما.
+   تُنادى عند الإدخال فلا تنتظر المعلّمة الجلب لترى نقطتها وقد تغيّرت. */
+function recalcStudent(sid,term){
+  const s=students.find(x=>x.id===sid); if(!s) return;
+  (term==null?[0,1,2]:[term]).forEach(t=>{
+    if(!s.marks[t]) return;
+    SUBJECTS.forEach(sub=>{
+      const b=BOOK[bookKey(s.id,t,sub.n)];
+      if(b&&b.entries.length) s.marks[t][sub.n]=clampMark(computeMark(b));
+    });
+    let sum=0,co=0;
+    SUBJECTS.forEach(sub=>{sum+=s.marks[t][sub.n]*sub.c;co+=sub.c;});
+    s.avg[t]=Math.round(sum/co*100)/100;
+  });
+}
+/* موادّ هذا الفصل التي **لا صفّ لها على الخادم** ⇒ المعروض فيها تقدير محلّي.
+   تُشتقّ لحظةَ الطلب من الدفتر نفسه، ولا تُخزَّن: النسخة المخزَّنة تبقى قديمة
+   بعد أن تُدخل المعلّمة نقطة، فيظلّ التحذير معلَّقًا على مادةٍ صارت موثّقة —
+   وهو كذبٌ في الاتجاه المعاكس. */
+function marksMissing(sid,term){
+  if(SYNC.mode!=="remote") return [];
+  return SUBJECTS.filter(su=>{
+    const b=BOOK[bookKey(sid,term,su.n)];
+    return !(b&&b.entries.some(e=>e.serverId));
+  }).map(su=>su.n);
+}
 function computeMark(b){
   const s=b.entries.filter(e=>e.kind!=="formative").map(e=>e.mark);
   const use=s.length?s:b.entries.map(e=>e.mark);
   return accumulator(b.acc).calc(use);
 }
-function setAcc(k){const sid=+document.getElementById("bkStu").value,subj=document.getElementById("bkSubj").value;const st=students.find(x=>x.id===sid);if(!st)return;bookOf(sid,subj,st.marks[0][subj]).acc=k;renderBook();}
+function setAcc(k){
+  const sid=+document.getElementById("bkStu").value,subj=document.getElementById("bkSubj").value;
+  const termSel=document.getElementById("bkTerm"),term=termSel?+termSel.value:0;
+  const st=students.find(x=>x.id===sid);if(!st)return;
+  bookOf(sid,subj,st.marks[term][subj],term).acc=k;
+  renderBook();
+}
 function renderBook(){
   const ss=document.getElementById("bkStu"),sj=document.getElementById("bkSubj");if(!ss||!sj)return;
   if(!ss.options.length)ss.innerHTML=students.map(s=>`<option value="${s.id}">${s.name} · ${s.cls}</option>`).join("");
   if(!sj.options.length)sj.innerHTML=SUBJECTS.map(s=>`<option value="${s.n}">${s.n}</option>`).join("");
+  if(!ss.value&&students[0])ss.value=students[0].id;
+  if(!sj.value)sj.value=SUBJECTS[0].n;
   const accSel=document.getElementById("bkAcc");
   if(accSel&&!accSel.options.length)accSel.innerHTML=ACCUMULATORS.map(a=>`<option value="${a.k}">${a.label}</option>`).join("");
-  const sid=+ss.value||(students[0]&&students[0].id),subj=sj.value||SUBJECTS[0].n;
+  const termSel=document.getElementById("bkTerm");
+  if(termSel&&!termSel.options.length)termSel.innerHTML=TERMS.map((t,i)=>`<option value="${i}">${t}</option>`).join("");
+  const sid=+ss.value,subj=sj.value,term=termSel?+termSel.value:0;
   const st=students.find(x=>x.id===sid);if(!st)return;
-  const b=bookOf(sid,subj,st.marks[0][subj]);
+  const b=bookOf(sid,subj,st.marks[term][subj],term);
   if(accSel)accSel.value=b.acc;
   const m=computeMark(b),q=qualLevel(m);
   const sum=b.entries.filter(e=>e.kind!=="formative").map(e=>e.mark);
+  /* صدقٌ في الدفتر نفسه: أيّ سطرٍ فيه **لم يصل الخادم**؟ الإدخال القديم يبدو
+     محفوظًا تمامًا في الشاشة وهو في هذا الجهاز وحده. نقولها في مكان الإدخال،
+     لا في شاشةٍ أخرى يبحث عنها المستخدمة. */
+  const unbacked=b.entries.filter(e=>!e.serverId).length;
+  const backed=(SYNC.mode!=="remote")?""
+    :(unbacked? `<div class="notice y" style="margin-top:8px;font-size:12.5px">⚠️ ${unbacked} تقييمًا في هذا الدفتر <b>لم يصل الخادم</b> بعد — معروضٌ في هذا الجهاز وحده.</div>`
+              : `<div class="notice g" style="margin-top:8px;font-size:12.5px">✓ كل تقييمات هذا الدفتر محفوظة على الخادم.</div>`);
   document.getElementById("bkOut").innerHTML=`
     <div class="cards" style="grid-template-columns:repeat(3,1fr)">
       ${kpiCard("المعدّل المحسوب","🧮",m==null?"—":m+" /10","blue")}
@@ -1424,7 +1490,75 @@ function renderBook(){
       <td>${e.kind==="formative"?'<span class="muted">لا — لا يُوثَّق ولا يؤثّر</span>':'✅ نعم'}</td>
     </tr>`).join("")}
     </tbody></table>
-    <div class="notice b" style="margin-top:10px;font-size:12.5px"><b>الحساب بشفافية:</b> «${accumulator(b.acc).label}» على ${sum.length} تقييم تحصيلي (${sum.join(" · ")}) = <b>${m}</b>. التقييم التكويني مستبعَد بالقاعدة الفنلدية، فيبقى المعلم حرًّا في الملاحظة الصفّية دون عبء توثيق.</div>`;
+    ${backed}
+    <div class="notice b" style="margin-top:8px;font-size:12.5px"><b>الحساب بشفافية:</b> «${accumulator(b.acc).label}» على ${sum.length} تقييم تحصيلي (${sum.join(" · ")}) = <b>${m}</b>. التقييم التكويني مستبعَد بالقاعدة الفنلدية، فيبقى المعلم حرًّا في الملاحظة الصفّية دون عبء توثيق.</div>`;
+}
+/* ═════════════ إدخال تقييم — **أوّل كتابة للنقاط** ═════════════
+   كانت النقاط تُقرأ من الخادم ولا تُكتب إليه أبدًا: تُبذَر هناك مرّة، ثم
+   يُدخل المعلّم نقطةً في الدفتر فتبقى في جهازه — وتظنّها محفوظة. هذا هو
+   الفرق بين منصّةٍ تُدار بها المدرسة ومنصّةٍ تُعرض بها المدرسة.
+
+   وقاعدتان مقصودتان:
+   ① **التكويني لا يُرسَل.** الوعد المكتوب في هذه اللوحة أنّ التقييم التكويني
+      «لا يُوثَّق»، ورفعُه إلى الخادم يُنشئ عبء التوثيق الذي ألغاه الدرس
+      الفنلدي أصلًا. فما لا يُوثَّق لا يُرفع — ويُعلَن ذلك **قبل** الحفظ.
+   ② **الفصل يُرسَل.** الدفتر معروض لفصلٍ بعينه، والقاعدة تقبل `term` ١..٣
+      بلا اعتراض — فإغفاله يكتب في الفصل الخطأ بهدوء. */
+function saveBookEntry(){
+  const sid=+document.getElementById("bkStu").value;
+  const subj=document.getElementById("bkSubj").value;
+  const termSel=document.getElementById("bkTerm"),term=termSel?+termSel.value:0;
+  const label=(document.getElementById("bkLabel").value||"").trim();
+  const kind=document.getElementById("bkKind").value;
+  const raw=document.getElementById("bkMark").value;
+  const st=students.find(x=>x.id===sid);
+  if(!st) return;
+  if(!label){ toast("اكتبي تسمية التقييم ⚠️","مثال: فرض 3 · اختبار الفصل · مشاركة","a"); return; }
+  if(raw===""||isNaN(+raw)){ toast("اكتبي النقطة ⚠️","النقطة من 0 إلى 10","a"); return; }
+  const mark=clampMark(+raw);
+  const b=bookOf(sid,subj,st.marks[term][subj],term);
+  /* التسمية نفسها في الفصل نفسه = تعديل لا تكرار — وهي أيضًا قيد القاعدة
+     `unique (student_id,subject,term,label)`. فنُعيد استعمال المعرّف المحلّي
+     نفسه، فيُحدِّث الـupsert الصفّ القائم ولا يُنشئ نسخةً ثانية. */
+  const prev=b.entries.find(e=>e.label===label);
+  const cid=(prev&&prev.clientId)||newClientId();
+  const entry={clientId:cid,label:label,mark:mark,kind:kind};
+  if(prev) Object.assign(prev,entry); else b.entries.push(entry);
+
+  /* ① الإرسال — و**التكويني لا يُرسَل** (انظر التعليق فوق الدالّة). */
+  let row=null, unlinked=false;
+  if(kind!=="formative"){
+    row=rowFor("grades",{student_id:sid,subject:subj,term:term,label:label,kind:kind,mark:mark,client_id:cid});
+    if(row===null){
+      /* التلميذة في هذا الجهاز ولم تُنشأ على الخادم ⇒ لا uuid يُربَط به الصفّ.
+         نقولها بدل إرسال صفٍّ نعرف أنّ الخادم سيرفضه. */
+      unlinked=true;
+    }else{
+      /* `cloudId` يُخزَّن مع الإدخال: به يُنجى من مسح `BOOK` في الجلب القادم
+         (فالرقم المحلّي سيُعاد توزيعه، والـuuid لا يتغيّر). */
+      (prev||entry).cloudId=row.student_id;
+      enqueue("grades",row);
+    }
+  }
+
+  /* إشعارٌ **واحد** لكل إدخال، يقول الحقيقة كاملة: أين ذهبت النقطة.
+     («حُفظت» بلا تحديد في وضعٍ محلي كذبةٌ صغيرة: تُوهم أنّها في الخادم.) */
+  let msg;
+  if(kind==="formative")
+    msg=["حُفظت في هذا الجهاز (تقييم تكويني)",
+         "التكويني لا يُرفع إلى الخادم بالقصد — لا يُوثَّق ولا يدخل المعدّل.","b"];
+  else if(unlinked)
+    msg=["حُفظت في هذا الجهاز فقط ⚠️",
+         "تلميذةٌ غير مرتبطة بحساب على الخادم — لا يمكن ربط النقطة بها.","a"];
+  else if(SYNC.mode==="remote")
+    msg=["حُفظت النقطة ✓","«"+label+"» — "+mark+"/10 في "+subj+" · ستُزامَن مع باقي الأجهزة.","g"];
+  else
+    msg=["حُفظت النقطة ✓ (وضع محلي)","«"+label+"» — "+mark+"/10 في "+subj+" · على هذا الجهاز وحده.","b"];
+
+  recalcStudent(sid,term);                 /* النقطة تتغيّر أمامها الآن، لا بعد الجلب */
+  document.getElementById("bkLabel").value=""; document.getElementById("bkMark").value="";
+  renderBook(); renderGrades(); saveState();
+  toast(msg[0],msg[1],msg[2]);
 }
 function renderGrades(){
   const cls=classesSorted(); fillSelect("grClass",cls);
@@ -1445,9 +1579,10 @@ function renderGrades(){
     return `<tr><td class="rankcell">${i+1}</td><td><button class="namebtn" onclick="openProfile(${st.id})">${st.name}</button></td>${marks}<td class="${markClass(st.avg[term])}"><b>${st.avg[term]}</b></td><td>${appreciation(st.avg[term])}</td></tr>`;
   }).join("");
 
-  /* صدق لا تجميل: موادّ بلا نقاط على الخادم تُعرض بأرقام محلّية. نقولها. */
-  const miss=[...new Set(arr.filter(s=>s.marksPartial).flatMap(s=>s.marksPartial))];
-  const msg=(SYNC.hydratedAt&&term===0&&miss.length)
+  /* صدق لا تجميل: موادّ بلا نقاط على الخادم تُعرض بأرقام محلّية. نقولها.
+     والموادّ تُشتقّ **لهذا الفصل المعروض** لحظتها — لا محفوظةً للفصل الأول. */
+  const miss=[...new Set(arr.flatMap(s=>marksMissing(s.id,term)))];
+  const msg=(SYNC.hydratedAt&&miss.length)
     ? `<div class="notice y">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${miss.map(esc).join(" · ")}</div>`
     : "";
   const note=document.getElementById("grNote");
@@ -1804,6 +1939,7 @@ let complaints=[
 function renderStudentWing(){
   const st=meStudent; if(!st) return;
   const r=studentRank(st,0);
+  const smiss=marksMissing(st.id,0);   /* موادّ الفصل الأول بلا سندٍ من الخادم */
   document.getElementById("shome").innerHTML=`
     <div class="hero"><div class="htxt"><b>مرحبًا ${st.name} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${st.cls} · هذه مساحتك الخاصة في EDUVIA</p></div></div>
     <div class="cards" style="grid-template-columns:repeat(4,1fr)">
@@ -1821,7 +1957,7 @@ function renderStudentWing(){
     <div class="panel"><div class="section-head"><h2>📊 نقاطي — الفصل الأول</h2><button class="btn" onclick="printReportCard(${st.id})">🖨️ كشف نقاطي</button></div>
     <div class="cards" style="grid-template-columns:repeat(3,1fr)">${kpiCard("معدّلي","🎯",st.avg[0]+" /10","blue")}${kpiCard("رتبتي","🏅",r.rank+" / "+r.total,"")}${kpiCard("التقدير","⭐",appreciation(st.avg[0]),"")}</div>
     <table><thead><tr><th>المادة</th><th>المعامل</th><th>نقطتي /10</th></tr></thead><tbody>${SUBJECTS.map(s=>`<tr><td>${s.n}</td><td>${s.c}</td><td class="${markClass(st.marks[0][s.n])}"><b>${st.marks[0][s.n]}</b></td></tr>`).join("")}</tbody></table>
-    ${st.marksPartial?`<div class="notice y" style="margin-top:10px">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${st.marksPartial.map(esc).join(" · ")}</div>`:""}</div>`;
+    ${smiss.length?`<div class="notice y" style="margin-top:10px">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${smiss.map(esc).join(" · ")}</div>`:""}</div>`;
   const stt=st.state==="absent"?'<span class="pill abs">غائبة</span>':st.state==="late"?'<span class="pill late">متأخّرة</span>':'<span class="pill ok">حاضرة</span>';
   document.getElementById("sattendance").innerHTML=`
     <div class="panel"><h2>🗓️ حضوري</h2>
@@ -2245,6 +2381,18 @@ function rowFor(table,o){
               at_time:o.at_time==null?null:o.at_time, client_id:o.client_id};
     }
 
+    /* النقاط — **أوّل كتابة لها** (كانت تُقرأ ولا تُكتب).
+       الفصل: الواجهة تعدّه ٠..٢ والقاعدة تشترطه ١..٣ ⇒ المعبر هنا وحده.
+       ولا يُرسَل `school_id` (مشغّل stamp_school يشتقّه من الملفّ) ولا
+       `recorded_by` (مشغّل stamp_author يوسمه من الجلسة): لو أرسلهما العميل
+       لأمكن تزوير الكتابة في مؤسسةٍ أخرى أو باسم غير الكاتب. */
+    case "grades":{
+      const sid=sidOrNull(o.student_id); if(sid===false) return null;
+      return {student_id:sid, subject:o.subject, term:(+o.term||0)+1,
+              label:o.label, kind:o.kind==="formative"?"formative":"summative",
+              mark:clampMark(o.mark), client_id:o.client_id};
+    }
+
     case "outbox":
       return {student_id:cloudIdOf(o.student_id),
               channel:MSG_CHANNEL_DB[o.channel]||"app",
@@ -2542,43 +2690,52 @@ async function hydrate(){
         }));
       /* هيكل مؤقّت حتى تصل الأرقام الحقيقية من grades/attendance أدناه. */
       students.forEach(assignAcademics);
+      /* ⚠️ قبل المسح: نُنجي التقييمات التي **أدخلتها المعلّمة** ولم تصل الخادم
+         بعد. `BOOK={}` وُجد لأنّ الأرقام المحلّية أُعيد توزيعها فصارت المفاتيح
+         بلا معنى — لكنّه يمحو معها إدخالًا لم يغادر هذا الجهاز قطّ: تختفي
+         النقطة من الشاشة وترتدّ إلى القيمة المولَّدة، فتبدو قد ضاعت.
+         ولا تُعرَف إلّا بـ`cloudId` (فالرقم المحلّي تغيّر الآن)، ولذلك
+         نُخزّنه مع الإدخال لحظة الحفظ. */
+      const held=[];
+      for(const k in BOOK){
+        const p=k.split("|");
+        BOOK[k].entries.forEach(e=>{
+          if(e.clientId&&!e.serverId&&e.cloudId) held.push({cloudId:e.cloudId,term:+p[1]||0,subj:p[2],entry:e});
+        });
+      }
       BOOK={};                       /* مفاتيحه أرقام محلّية أُعيد توزيعها ⇒ صارت بلا معنى */
       nextId=students.length+1;
+      held.forEach(h=>{              /* الربط بـcloudId لا بالرقم المحلّي */
+        const s=students.find(x=>x.cloudId===h.cloudId); if(!s) return;
+        const k=bookKey(s.id,h.term,h.subj);
+        if(!BOOK[k]) BOOK[k]={acc:"avg",entries:[]};
+        if(!BOOK[k].entries.some(e=>e.clientId===h.entry.clientId)) BOOK[k].entries.push(h.entry);
+      });
     }
 
-    /* ---------- ② النقاط — تُبنى من صفوف الخادم لا من العشوائية ---------- */
+    /* ---------- ② النقاط — تُبنى من صفوف الخادم لا من العشوائية ----------
+       و`term` في القاعدة ١..٣ ⇒ نُنقص واحدًا عند القراءة، تمامًا كما نزيده
+       عند الكتابة. **اتجاهان لمعبرٍ واحد** — ولو أسقطناه هنا لظهرت نقاط
+       الفصل الثاني في خانة الأول. */
     if(gRows&&gRows.length){
+      const terms=new Set();
       gRows.forEach(g=>{
         const s=students.find(x=>x.cloudId===g.student_id); if(!s) return;
-        const k=s.id+"|"+g.subject;
+        const t=Math.max(0,Math.min(2,(Number(g.term)||1)-1));
+        terms.add(t);
+        const k=bookKey(s.id,t,g.subject);
         if(!BOOK[k]) BOOK[k]={acc:"avg",entries:[]};
         if(!BOOK[k].entries.some(e=>e.serverId===g.id))
           BOOK[k].entries.push({serverId:g.id,label:g.label,mark:Number(g.mark),
                                 kind:g.kind==="formative"?"formative":"summative"});
       });
-      students.forEach(s=>{
-        SUBJECTS.forEach(sub=>{
-          const b=BOOK[s.id+"|"+sub.n];
-          if(b&&b.entries.length) s.marks[0][sub.n]=clampMark(computeMark(b));
-        });
-        let sum=0,co=0;
-        SUBJECTS.forEach(sub=>{sum+=s.marks[0][sub.n]*sub.c;co+=sub.c;});
-        s.avg[0]=Math.round(sum/co*100)/100;
-      });
+      /* نُعيد الحساب للفصول التي جاءت منها الصفوف وحدها — لا نفترض الأول. */
+      terms.forEach(t=>students.forEach(s=>recalcStudent(s.id,t)));
     }
 
-    /* ---------- ②ب. ما لم يُدخَل على الخادم بعد — نُعلنه ولا نُمرّره كنقاط
-       الموادّ التي لا صفّ لها على الخادم تحتفظ بقيمة مولَّدة محلّيًا. عرضُها
-       كأنها نقاط رسمية كذبٌ على المعلّمة. نُسمّيها ونصفها «تقدير محلّي». */
-    if(SYNC.mode==="remote"){
-      students.forEach(s=>{
-        const miss=SUBJECTS.filter(su=>{
-          const b=BOOK[s.id+"|"+su.n];
-          return !(b&&b.entries.some(e=>e.serverId));
-        }).map(su=>su.n);
-        s.marksPartial=miss.length?miss:null;
-      });
-    }
+    /* ما لم يُدخَل على الخادم بعد: لم يبقَ ما يُخزَّن هنا — الصدق في هذه
+       الشاشة تُشتقّ لحظتها بـ`marksMissing()` من الدفتر نفسه، فلا يبقى
+       تحذيرٌ معلَّقًا على مادةٍ صارت موثّقة بعد أن أُدخلت نقطتها. */
 
     /* ---------- ③ الحضور — ونُشتقّ منه سجلّ البوابة ---------- */
     if(aRows&&aRows.length){
