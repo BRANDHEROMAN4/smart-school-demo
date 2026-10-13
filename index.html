@@ -911,18 +911,36 @@ const UNBACKED={
   timetable:"التوقيت نموذجيّ ثابت: لا يُقرأ من الخادم ولا يُحفظ فيه",
   calendar: "الأحداث تجريبية مولَّدة في المتصفّح، ولا مصدر لها على الخادم",
   parents:  "عمود «الحالة: مفعّل» وهميّ — لا حساب وليّ أمر على الخادم بعد",
-  summons:  "لا يُزامَن الاستدعاء، ولا يصل وليّ الأمر عبر قناة حقيقية بعد",
+  summons:  "لا يبلغ الاستدعاء وليّ الأمر عبر قناة حقيقية بعد (لا حساب وليّ أمر على الخادم)",
   gate:     "قارئ البطاقات محاكاة: سجلّ البوابة مولَّد، ولا جهاز حقيقيّ موصول",
 };
 function markUnbacked(){
   if(SYNC.mode!=="remote") return;
   for(const k in UNBACKED){
     const sec=document.getElementById(k);
-    if(!sec || sec.querySelector(".nb-flag")) continue;   /* مرّة واحدة لا في كل render */
+    if(!sec) continue;
+    /* سجلّ البوابة صار يُقرأ من الخادم حين يُوجَد — فوسمُه بأنّه «مولَّد» يصير
+       كذبًا في الاتجاه المعاكس. يبقى الصادق: القارئ محاكاة، أمّا التسجيل فحقيقيّ.
+       والاستدعاء كذلك: كان لا يُزامَن، وصار يُزامَن ويظهر للتلميذة — والناقص الآن
+       هو **قناة الوليّ** لا المزامنة. فلكلٍّ نصّه، لا عبارة عامّة. */
+    let txt=UNBACKED[k];
+    if(k==="gate"&&SYNC.gateFromServer)
+      txt="قارئ البطاقات محاكاة (لا جهاز موصول) — لكن كل عبور في هذه الشاشة يُسجَّل فعلًا ويُزامَن";
+    else if(k==="summons"&&SYNC.summonsFromServer)
+      txt="الاستدعاء يُزامَن ويظهر للتلميذة على جهازها — لكنه لا يبلغ وليّ الأمر عبر قناة حقيقية بعد";
+    /* الوسم يُبنى مرّة لا في كل render — **لكن نصّه يتبع الحقيقة**: كان يشترط وجوده
+       فيمضي، فالوسم الذي بُني قبل اكتمال الجلب يبقى على حاله أبدًا (ووسم البوابة
+       المحسَّن لم يكن يظهر أصلًا). الآن يُحدَّث إن تغيّر النصّ وحده. */
+    const prev=sec.querySelector(".nb-flag");
+    if(prev){
+      if(prev.dataset.t!==txt){ prev.innerHTML=`⚠️ <b>${esc(txt)}</b>`; prev.dataset.t=txt; }
+      continue;
+    }
     const d=document.createElement("div");
     d.className="notice y nb-flag";
     d.style.marginBottom="10px";
-    d.innerHTML=`⚠️ <b>${esc(UNBACKED[k])}</b>`;
+    d.dataset.t=txt;
+    d.innerHTML=`⚠️ <b>${esc(txt)}</b>`;
     sec.insertBefore(d,sec.firstElementChild);
   }
 }
@@ -1084,6 +1102,17 @@ function simulateScan(){
   const isLate=(t.getHours()>8)||(t.getHours()===8&&t.getMinutes()>15);
   st.state=isLate?"late":"present"; st.time=hm;
   gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate});
+  /* العبور يُسجَّل مرّتين، وهما ليسا تكرارًا بل **دقّة مختلفة**:
+     `attendance` صفٌّ واحد لليوم (حالة التلميذة اليوم)، و`gate_log` أثرُ كلّ
+     عبور على حِدة (وقد تعبر مرّتين، وتتأخّر). أمّا الحضور فلم يكن يُرسَل من
+     هذه الشاشة أصلًا — فكان العبور في البوابة **مسرحية محلّية**: يتحرّك على
+     الشاشة ولا يعلم به الخادم. */
+  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day:todayISO(),late:isLate}));
+  /* أثر العبور للجميع (الأمانة لها `gate_write`)؛ أمّا **حضور اليوم** فشأن من
+     يملك `can_record` — والخادم يرفضه من الأمانة رفضًا مؤكّدًا. لا نُرسل ما نعلم
+     أنّه سيُردّ: البوابة أثرُ عبور، والحضور سجلّ المعلّمة. */
+  if(canRecord(currentRole))
+    enqueue("attendance", rowFor("attendance",{student_id:st.id,day:todayISO(),state:st.state,at_time:hm}));
   notifs.unshift({time:hm,type:isLate?"late":"entry",text:`تمّ إشعار ${st.parent}: دخلت ابنته ${st.name} (${st.cls}) المدرسة الساعة ${hm}${isLate?" — دخول متأخّر":""}.`});
   unread++;
   render();
@@ -1094,11 +1123,16 @@ function markPresent(id){
   const st=students.find(s=>s.id===id);if(!st)return;
   const hm=nowHM();st.state="present";st.time=hm;
   gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:false});
+  /* تحضيرٌ يدوي = عبورٌ سُجّل بالنيابة: أثره في البوابة حقيقيّ، فيُكتب هناك
+     أيضًا. (وقد يكون حقل `late` خاطئًا — صنّفناه حاضرًا، وهو ما قِسْناه.) */
+  enqueue("gate_log", rowFor("gate_log",{student_id:id,at_time:hm,day:todayISO(),late:false}));
   notifs.unshift({time:hm,type:"entry",text:`تحضير يدوي: سُجّلت ${st.name} (${st.cls}) حاضرةً.`});
-  /* الحضور يذهب إلى الطابور — يُحفظ محليًا فورًا ويصل الخادم عند الشبكة */
-  enqueue("attendance", rowFor("attendance",{
-    student_id:id, day:new Date().toISOString().slice(0,10), state:"present", at_time:hm
-  }));
+  /* الحضور يذهب إلى الطابور — يُحفظ محليًا فورًا ويصل الخادم عند الشبكة.
+     وبنفس حدّ البوابة: أثر العبور للجميع، وحضور اليوم لمن يملك `can_record`. */
+  if(canRecord(currentRole))
+    enqueue("attendance", rowFor("attendance",{
+      student_id:id, day:new Date().toISOString().slice(0,10), state:"present", at_time:hm
+    }));
   render();toast("تحضير يدوي ✅",`${st.name} · ${st.cls}`,"g");
 }
 /* ===== القنوات المتعددة — درس: القناة الواحدة تفشل دائمًا (Wilma الفنلدي) =====
@@ -1966,14 +2000,14 @@ function renderStudentWing(){
     <div class="muted">سجلّ حضورك محفوظ ويطّلع عليه وليّ أمرك والإدارة.</div></div>`;
   let tt="<thead><tr><th class='t-per'></th>"+TT_DAYS.map(d=>`<th>${d}</th>`).join("")+"</tr></thead><tbody>"+TT.map(row=>`<tr><td class="t-per">${ltr(row[0])}</td>`+row[1].map(sub=>sub==="—"?`<td class="t-off">—</td>`:`<td class="${SUBCLASS[sub]||''}">${sub}</td>`).join("")+"</tr>").join("")+"</tbody>";
   document.getElementById("stimetable").innerHTML=`<div class="panel"><h2>🕘 توقيتي — القسم ${st.cls}</h2><div style="overflow:auto"><table class="tt">${tt}</table></div></div>`;
-  document.getElementById("swork").innerHTML=`<div class="panel"><h2>📚 واجباتي المنزلية</h2>${HOMEWORK.filter(h=>h.cls===st.cls||h.cls==="الكل").map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${h.subj}</b><span class="pill late">📅 ${h.due}</span></div><div style="margin-top:5px;font-size:13px">${h.title}</div></div>`).join("")||'<div class="notice">لا واجبات حاليًا.</div>'}<div class="muted" style="margin-top:8px">لا تنسَ إنجاز واجباتك قبل موعدها 📖</div></div>`;
+  document.getElementById("swork").innerHTML=`<div class="panel"><h2>📚 واجباتي المنزلية</h2>${HOMEWORK.filter(h=>h.cls===st.cls||h.cls==="الكل").map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(h.subj)}</b><span class="pill late">📅 ${esc(h.due)}</span></div><div style="margin-top:5px;font-size:13px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات حاليًا.</div>'}<div class="muted" style="margin-top:8px">لا تنسَ إنجاز واجباتك قبل موعدها 📖</div></div>`;
   const _nb=behavBalance();
   document.getElementById("snotes").innerHTML=`<div class="panel"><h2>📌 ملاحظاتي والسلوك</h2>
     <div class="notice g">تقديري السلوكي العام: <b>${esc(st.behavior)}</b></div>
     <div class="notice b" style="font-size:12.5px"><b>حقوقك مضمونة:</b> سجلّ السلوك <b>متوازن</b> (إيجابي/سلبي)، ولك <b>حقّ الاعتراض</b> على أي ملاحظة خلال ${BEHAV_REPLY_DAYS} أيام، ولا تُحفظ الملاحظات إلا <b>${BEHAV_RETENTION_DAYS} يومًا</b> ثم تُؤرشف.</div>
     <div class="muted" style="margin:4px 0 6px">توازن سجلّك: ${_nb.pos} إيجابي · ${_nb.neg} سلبي</div>
     ${NOTES.filter(n=>n.sid===st.id).map(n=>noteCard(n,"student")).join("")||'<div class="muted">لا ملاحظات مسجّلة عليك. 🌱</div>'}</div>`;
-  document.getElementById("ssummons").innerHTML=`<div class="panel"><h2>📨 استدعاءات وليّ أمري</h2>${SUMMONS.filter(x=>x.sid===st.id||x.sid==null).map(x=>`<div class="notice y"><b>${x.reason}</b><div class="muted" style="margin-top:4px">📅 ${x.date} · الحالة: ${x.status}</div></div>`).join("")||'<div class="notice">لا توجد استدعاءات.</div>'}</div>`;
+  document.getElementById("ssummons").innerHTML=`<div class="panel"><h2>📨 استدعاءات وليّ أمري</h2>${SUMMONS.filter(x=>x.sid===st.id).map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · الحالة: ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا توجد استدعاءات.</div>'}</div>`;
   document.getElementById("sannounce").innerHTML=`<div class="panel"><h2>📢 إعلانات المؤسسة</h2>${announcements.map(a=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${a.title}</b><span class="muted">${a.time}</span></div><div style="margin-top:5px;font-size:13px">${a.body}</div></div>`).join("")}</div>`;
   document.getElementById("complaints").innerHTML=`
     <div class="panel"><h2>📝 صندوق الشكاوى والاقتراحات</h2>
@@ -2039,7 +2073,7 @@ function renderTeacherTools(){
       ${L("القسم")}<select class="sel" id="hwCls" aria-label="القسم"><option>الكل</option>${cls.map(c=>`<option>${c}</option>`).join("")}</select>
       ${L("المادة")}<select class="sel" id="hwSubj" aria-label="المادة">${SUBJECTS.map(s=>`<option>${s.n}</option>`).join("")}</select>
       ${L("الواجب")}<textarea id="hwText" rows="2" ${TA} placeholder="نص الواجب..." aria-label="نص الواجب"></textarea>
-      ${L("آخر أجل")}<input class="search" id="hwDue" style="margin:0" placeholder="مثال: الأحد 21 سبتمبر" aria-label="آخر أجل">
+      ${L("آخر أجل")}<input class="search" id="hwDue" type="date" style="margin:0" aria-label="آخر أجل">
       <div class="actions" style="margin-top:12px"><button class="btn primary" onclick="postHomework()">📚 نشر الواجب</button></div>
       <div id="hwList" style="margin-top:14px"></div>
     </div>
@@ -2054,7 +2088,7 @@ function renderTeacherTools(){
   }
   renderHwList(); renderNtList();
 }
-function renderHwList(){const el=document.getElementById("hwList");if(!el)return;el.innerHTML=HOMEWORK.map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${h.subj} · ${h.cls}</b><span class="pill late">📅 ${h.due}</span></div><div style="margin-top:5px;font-size:13px">${h.title}</div></div>`).join("")||'<div class="muted">لا واجبات منشورة بعد.</div>';}
+function renderHwList(){const el=document.getElementById("hwList");if(!el)return;el.innerHTML=HOMEWORK.map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(h.subj)} · ${esc(h.cls)}</b><span class="pill late">📅 ${esc(h.due)}</span></div><div style="margin-top:5px;font-size:13px">${esc(h.title)}</div></div>`).join("")||'<div class="muted">لا واجبات منشورة بعد.</div>';}
 function renderNtList(){
   const el=document.getElementById("ntList");if(!el)return;
   const sent=NOTES.filter(n=>n.sid!=null);
@@ -2063,11 +2097,27 @@ function renderNtList(){
   el.innerHTML=bal+(sent.length?sent.map(n=>{const s=students.find(x=>x.id===n.sid);n.targetName=s?s.name:"—";return noteCard(n,"admin");}).join(""):'<div class="muted">لا ملاحظات مُرسَلة بعد.</div>');
 }
 function postHomework(){
-  const cls=document.getElementById("hwCls").value,subj=document.getElementById("hwSubj").value;
-  const title=esc(document.getElementById("hwText").value.trim()),due=esc(document.getElementById("hwDue").value.trim())||"قريبًا";
+  const picked=document.getElementById("hwCls").value,subj=document.getElementById("hwSubj").value;
+  const title=document.getElementById("hwText").value.trim();
+  const dueOn=document.getElementById("hwDue").value||"";   /* منتقي تاريخ ⇒ ISO أو فارغ */
   if(!title){toast("تنبيه","اكتب نص الواجب أولًا.","a");return;}
-  HOMEWORK.unshift({cls,subj,title,due});document.getElementById("hwText").value="";document.getElementById("hwDue").value="";renderHwList();
-  toast("تمّ النشر 📚","سيظهر الواجب لدى تلاميذ "+cls+".","g");
+  /* يُخزَّن **نصًّا خامًا** ويُهرَّب عند العرض. عكسُه (التهريب عند الإدخال) كان
+     يعني إرسال `&amp;` إلى الخادم: البيانات في القاعدة تختلف عمّا رآه المستخدم.
+     و`clientId` يُثبَّت على الصفّ المحلّي قبل الإرسال: به يُنجى الصفّ من الجلب
+     القادم إن لم يكن قد وصل بعد (`pend`) — وإلّا اختفى من الشاشة أمام عينَي من نشره.
+     و«الكل» يتوسّع إلى صفٍّ لكل قسم في `homeworkRows` (لأنّه ليس قسمًا في القاعدة). */
+  const items=homeworkRows(picked,classesSorted(),subj,title,dueOn);
+  if(!items.length){toast("تنبيه","لا أقسام معرَّفة بعد — لا يمكن النشر لـ«الكل».","a");return;}
+  for(const it of items){
+    HOMEWORK.unshift(it.local);
+    enqueue("homework", it.row);
+  }
+  document.getElementById("hwText").value="";document.getElementById("hwDue").value="";renderHwList();
+  toast("تمّ النشر 📚",
+    items.length>1
+      ? "نُشر في "+items.length+" أقسام"+(SYNC.mode==="remote"?" — ويُزامَن مع أجهزة تلاميذهنّ.":".")
+      : "سيظهر الواجب لدى تلاميذ "+items[0].cls+(SYNC.mode==="remote"?" — ويُزامَن مع أجهزتهم.":"."),
+    "g");
 }
 function postNote(){
   const sid=+document.getElementById("ntSid").value,cat=document.getElementById("ntCat").value;
@@ -2096,20 +2146,32 @@ function renderSummons(){
     const L=t=>`<label style="display:block;font-size:12px;color:var(--muted);margin:12px 0 6px">${t}</label>`;
     host.innerHTML=`${L("التلميذ")}<select class="sel" id="smSid" aria-label="التلميذ">${students.map(s=>`<option value="${s.id}">${s.name} · ${s.cls}</option>`).join("")}</select>
       ${L("سبب الاستدعاء")}<textarea id="smReason" rows="2" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-family:inherit;font-size:14px" placeholder="مثال: لقاء لمناقشة نتائج ابنكم" aria-label="سبب الاستدعاء"></textarea>
-      ${L("التاريخ المقترح")}<input class="search" id="smDate" style="margin:0" placeholder="مثال: الخميس 25 سبتمبر" aria-label="التاريخ">
+      ${L("التاريخ المقترح")}<input class="search" id="smDate" type="date" style="margin:0" aria-label="التاريخ">
       <div class="actions" style="margin-top:12px"><button class="btn primary" onclick="postSummons()">📨 إرسال الاستدعاء</button></div>`;
     host.dataset.built="1";
   }
   const el=document.getElementById("sumList");if(!el)return;
-  el.innerHTML=SUMMONS.length?SUMMONS.map(x=>`<div class="notice y"><div style="display:flex;justify-content:space-between;gap:10px"><b>${x.name}</b><span class="pill pend">${x.status}</span></div><div style="margin-top:5px;font-size:13px">${x.reason}</div><div class="muted" style="margin-top:5px">📅 ${x.date}</div></div>`).join(""):'<div class="notice">لا استدعاءات بعد.</div>';
+  el.innerHTML=SUMMONS.length?SUMMONS.map(x=>`<div class="notice y"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(x.name)}</b><span class="pill pend">${esc(x.status)}</span></div><div style="margin-top:5px;font-size:13px">${esc(x.reason)}</div><div class="muted" style="margin-top:5px">📅 ${esc(x.date)}</div></div>`).join(""):'<div class="notice">لا استدعاءات بعد.</div>';
 }
 function postSummons(){
   const sid=+document.getElementById("smSid").value;const s=students.find(x=>x.id===sid);
-  const reason=esc(document.getElementById("smReason").value.trim()),date=esc(document.getElementById("smDate").value.trim())||"يُحدَّد لاحقًا";
+  const reason=document.getElementById("smReason").value.trim();
+  const dueOn=document.getElementById("smDate").value||"";
   if(!reason){toast("تنبيه","اكتب سبب الاستدعاء أولًا.","a");return;}
-  SUMMONS.unshift({sid,name:"وليّ أمر: "+(s?s.name:""),reason,date,status:"مُرسَل"});
+  const cid=newClientId();
+  SUMMONS.unshift({clientId:cid,sid,name:"وليّ أمر: "+(s?s.name:""),reason,
+                   date:dueAr(dueOn)||"يُحدَّد لاحقًا",status:"مُرسَل"});
   document.getElementById("smReason").value="";document.getElementById("smDate").value="";renderSummons();
-  toast("تمّ الإرسال 📨","وُجّه الاستدعاء إلى وليّ أمر "+(s?s.name:"")+".","g");
+  const row=rowFor("summons",{sid,reason,due_on:dueOn||null,status:"مُرسَل",client_id:cid});
+  if(row===null){
+    /* التلميذة غير مرتبطة بحساب على الخادم ⇒ لا uuid. ولا نُرسل صفًّا بلا
+       تلميذة: معناه في الواجهة المحلّية (يراه الجميع) يخالف معناه في RLS
+       (لا يراه أحد) — فتفترق الشاشتان ونحن نظنّها وصلت. */
+    toast("حُفظ محليًّا فقط ⚠️","تلميذةٌ غير مرتبطة بحساب على الخادم — لم يُرسَل الاستدعاء.","a");
+  } else {
+    enqueue("summons",row);
+    toast("تمّ الإرسال 📨","وُجّه الاستدعاء إلى وليّ أمر "+(s?s.name:"")+(SYNC.mode==="remote"?" — ويصل أجهزتهم.":"."),"g");
+  }
 }
 
 /* ===== جناح المفتّش (Inspector Wing) ===== */
@@ -2285,7 +2347,11 @@ const SYNC = {
   lastBlocked: null,
   lastSync: null,
   lastError: null,
-  loading: false
+  loading: false,
+  /* هل رأينا صفًّا جاء من الخادم فعلًا في هذا الشاشة؟ لا تُعلَن المزامنة بدونه —
+     الوسم الصادق يحتاج إثباتًا لا وعدًا (وقد تكرّر أنّ الوعد في الواجهة ليس إثباتًا). */
+  gateFromServer: false,
+  summonsFromServer: false
 };
 
 /* ---------------------------------------------------------------- الطابور
@@ -2331,6 +2397,13 @@ function enqueue(table,row,opts){
    — فلو أرسله العميل لأمكن تزوير الكتابة في مؤسسة أخرى. */
 const NOTE_STATUS_DB={"قائم":"open","معترَض عليه":"open","ملغى":"revoked","مؤرشف":"archived"};
 const ATT_STATE_DB={present:"present",absent:"absent",late:"late",pending:"pending"};
+/* ≡ يمكن ما في `can_record()` على الخادم (sql/002_rls.sql:59) — من يكتب اليوم الدراسي.
+   الفصل مقصود وليس سهوًا: `attendance_write` تشترطها، **والأمانة ليست فيها** وإن كان
+   لها `gate_write` (هي التي على الباب). فإرسال `attendance` من شاشة البوابة وهي أمانة
+   يردّه الخادم `42501`، و42501 **ليس** في PERMANENT_FAIL ⇒ ثماني محاولات ثم إنذار
+   «ردّه الخادم نهائيًّا» لا تفهمه الأمانة. فنسأل قبل الإرسال بدل أن نُرسل ونعتذر. */
+const CAN_RECORD_ROLES=new Set(["director","teacher","supervisor"]);
+const canRecord=(role)=>CAN_RECORD_ROLES.has(role);
 const MSG_CHANNEL_DB={app:"app",sms:"sms",call:"call"};
 
 /* ------------------------------------------------------- معبر المعرّفات
@@ -2356,6 +2429,28 @@ function sidOrNull(localId){
   if(localId==null) return null;
   const cid=cloudIdOf(localId);
   return cid==null ? false : cid;
+}
+
+/* ------------------------------------------------------ «الكل» ليس قسمًا
+   الخيار الافتراضي في نموذج الواجب هو «الكل»، ويُخزَّن حرفيًّا `class_label`.
+   لكن سياسة القراءة تشترط `s.class_label = homework.class_label`، ولا تلميذة
+   اسمها قسمها «الكل» ⇒ الصفّ يراه الطاقم ويصير **غير مرئي لكل تلميذة**،
+   والرسالة تقول إنّه سيظهر لهنّ.
+   الحلّ: صفٌّ لكل قسم معرَّف، ولكلٍّ `clientId` — فيبقى التطابق واحدًا
+   (صفٌّ محلّي ⇄ صفٌّ على الخادم) و`pend` تعمل كما هي.
+   دالّتان صافيتان كي **تُقاسا** لا تُوصَفا: القائمة تُمرَّر لا تُقرأ من `students`. */
+function expandClasses(picked, all){
+  return picked==="الكل" ? all.slice() : [picked];
+}
+function homeworkRows(picked, all, subj, title, dueOn){
+  return expandClasses(picked, all).map(cls=>{
+    const client_id=newClientId();
+    return {
+      cls,
+      local:{clientId:client_id,cls,subj,title,due:dueAr(dueOn)||"قريبًا"},
+      row:rowFor("homework",{cls,subj,title,due_on:dueOn||null,client_id})
+    };
+  });
 }
 
 function rowFor(table,o){
@@ -2398,6 +2493,33 @@ function rowFor(table,o){
               channel:MSG_CHANNEL_DB[o.channel]||"app",
               phone:o.phone==null?null:o.phone, recipient:o.recipient==null?null:o.recipient,
               body:o.body, status:"queued", client_id:o.client_id};
+
+    /* الواجب — `due_on` عمود **تاريخ** في القاعدة لا نصّ حرّ. وكان الحقل في
+       الواجهة نصًّا حرًّا («الأحد 21 سبتمبر»)، فإرساله كان يردّه Postgres
+       بـ`22P02` — وهو خطأ **دائم** يُسقِط الصفّ بلا رجعة، والواجهة تبدو
+       سليمة تمامًا. فصار الحقل منتقي تاريخ، والقيمة ISO أو فارغة. */
+    case "homework":
+      return {class_label:o.cls, subject:o.subj, title:o.title,
+              due_on:o.due_on||null, client_id:o.client_id};
+
+    /* الاستدعاء — `student_id` يقبل null في المخطّط، **ولا نستغلّه**: استدعاءٌ
+       بلا تلميذة يراه كلّ تلميذة في الواجهة المحلّية (فالشرط `x.sid==null`)،
+       بينما RLS لا تُريه أحدًا. فتفترق الشاشتان بصمت. فإن لم تُعرَف التلميذة
+       على الخادم لا نُرسل — ونقولها، بدل صفٍّ معناه مختلف في كلّ جهة. */
+    case "summons":{
+      const sid=sidOrNull(o.sid); if(sid===false) return null;
+      return {student_id:sid, reason:o.reason, due_on:o.due_on||null,
+              status:o.status||"مُرسَل", client_id:o.client_id};
+    }
+
+    /* سجلّ البوابة — **إضافة فقط** (لا سياسة UPDATE ولا DELETE في المخطّط):
+       فإعادة إرسال صفٍّ وصل تردّها السياسة 42501 وتُنذر المديرة إنذارًا كاذبًا
+       والأثر قد وصل. فله DO NOTHING كسجلّ التدقيق. */
+    case "gate_log":{
+      const sid=sidOrNull(o.student_id); if(sid===false) return null;
+      return {student_id:sid, at_time:o.at_time, day:o.day,
+              late:!!o.late, client_id:o.client_id};
+    }
 
     /* إنشاء تلميذة — school_id لا يُرسَل: مُشغّل stamp_school يشتقّه من
        ملفّ المستخدم على الخادم، فيستحيل تزوير الكتابة في مؤسسة أخرى. */
@@ -2499,7 +2621,7 @@ const conflictKey=(t)=>CONFLICT_OF[t]||"client_id";
    الخادم `42501` «لا سياسة تعديل» — فيُعيد العميل ٨ مرّات ثم يُنذر المديرة
    إنذارًا كاذبًا والأثر قد وصل. فلهذه الجداول نطلب DO NOTHING: «إن كان وصل
    فذاك هو المطلوب» — نجاحٌ صريح لا خطأ. */
-const INSERT_ONLY={audit_log:1, notifications:1, complaints:1};
+const INSERT_ONLY={audit_log:1, notifications:1, complaints:1, gate_log:1};
 const isInsertOnly=(t)=>!!INSERT_ONLY[t];
 
 async function flushQueue(){
@@ -2630,6 +2752,9 @@ const NOTE_STATUS_UI=n=>n.status==="revoked"?"ملغى"
   :n.status==="archived"?"مؤرشف"
   :(n.reply?"معترَض عليه":"قائم");
 const todayISO=()=>new Date().toISOString().slice(0,10);
+/* تاريخ ISO (‎2026-09-21) ← ما يقرؤه الإنسان (‎21/09/2026).
+   `due_on` عمود تاريخ في القاعدة، وعرضه ISO خامًا في الشاشة غير مفهوم. */
+function dueAr(iso){const p=String(iso||"").split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:"";}
 function pendingClientIds(){
   const s=new Set();
   QUEUE.forEach(i=>{ if(i.row&&i.row.client_id) s.add(i.row.client_id); });
@@ -2663,10 +2788,10 @@ async function hydrate(){
       if(r.error){ errs.push(t); return null; }
       return r.data||[];
     };
-    const [sRows,nRows,gRows,aRows,stRows,anRows,ntRows,cRows]=await Promise.all([
+    const [sRows,nRows,gRows,aRows,stRows,anRows,ntRows,cRows,hRows,smRows,glRows]=await Promise.all([
       get("students"), get("behaviour_notes"), get("grades"),
       get("attendance"), get("staff"), get("announcements"), get("notifications"),
-      get("complaints")
+      get("complaints"), get("homework"), get("summons"), get("gate_log")
     ]);
     /* سؤالٌ واحد يمنع عطبًا لاحقًا: `target`/`anonymous` يُضيفهما sql/004.
        لو أرسلناهما قبل تشغيله لرفضهما الخادم وأوقفا الطابور كلّه. */
@@ -2754,6 +2879,26 @@ async function hydrate(){
         .sort((a,b)=>b.time.localeCompare(a.time));
     }
 
+    /* ---------- ③ب. سجلّ البوابة الحقيقي ----------
+       `gateLog` أعلاه **مشتقّ** من الحضور: صفٌّ واحد لكل تلميذة (حالة اليوم).
+       أمّا `gate_log` فأثرُ **كلّ عبور** على حِدة — وهو ما سيولّده القارئ.
+       فإذا وُجدت صفوفٌ حقيقية فهي المرجع، والمشتقّ يبقى احتياطًا حين لا جهاز.
+       (ولا نخلطهما: المشتقّ يقول «سارة حاضرة الساعة 08:10»، والحقيقي يقول
+       «عبَرت مرّتين: 08:10 و 09:40» — وهذا فرقٌ يهمّ الإدارة.) */
+    if(glRows&&glRows.length){
+      const today=glRows.filter(r=>String(r.day).slice(0,10)===todayISO());
+      if(today.length){
+        gateLog=today
+          .filter(r=>{const s=students.find(x=>x.cloudId===r.student_id);return !!s;})
+          .map(r=>{
+            const s=students.find(x=>x.cloudId===r.student_id);
+            return {time:r.at_time,name:s.name,cls:s.cls,late:!!r.late};
+          })
+          .sort((a,b)=>String(b.time).localeCompare(String(a.time)));
+        SYNC.gateFromServer=true;
+      }
+    }
+
     /* ---------- ④ سجلّ السلوك — قلب المنصّة ---------- */
     if(nRows){
       const localPending=NOTES.filter(n=>n.clientId&&pend.has(n.clientId));
@@ -2783,6 +2928,36 @@ async function hydrate(){
       announcements=anRows.map(a=>({time:"",title:a.title,body:a.body,parents:true}));
     if(ntRows&&ntRows.length)
       notifs=ntRows.map(n=>({time:n.at_time||"",type:n.kind||"system",text:n.body}));
+
+    /* ---------- ⑤ب. الواجبات والاستدعاءات ----------
+       كانتا تُكتبان في مصفوفة محلّية فقط: تنشر المعلّمة واجبًا فيظهر عندها
+       وحدها، وتُرسل الإدارة استدعاءً فلا يعلم به وليّ الأمر ولا ابنتُه.
+       والصيغة نفسها المُتَّبعة في السلوك: ما لم يصل يُنجى (`pend`)، لأنّه
+       ملك من أدخله ولا يملكه الخادم بعد. */
+    if(hRows){
+      const localPending=HOMEWORK.filter(h=>h.clientId&&pend.has(h.clientId));
+      const mapped=hRows
+        .filter(h=>!(h.client_id&&pend.has(h.client_id)))
+        .map(h=>({serverId:h.id, clientId:h.client_id||null,
+                  cls:h.class_label, subj:h.subject, title:h.title,
+                  due:dueAr(h.due_on)||"قريبًا"}));
+      if(mapped.length||localPending.length) HOMEWORK=mapped.concat(localPending);
+    }
+    if(smRows){
+      const localPending=SUMMONS.filter(x=>x.clientId&&pend.has(x.clientId));
+      const mapped=smRows
+        .filter(x=>!(x.client_id&&pend.has(x.client_id)))
+        .map(x=>{
+          const s=students.find(y=>y.cloudId===x.student_id);
+          return {serverId:x.id, clientId:x.client_id||null,
+                  sid:s?s.id:null, name:"وليّ أمر: "+(s?s.name:"—"),
+                  reason:x.reason, date:dueAr(x.due_on)||"يُحدَّد لاحقًا",
+                  status:x.status}; });
+      if(mapped.length||localPending.length) SUMMONS=mapped.concat(localPending);
+      /* الوسم يقول الحقيقة في الحالتين: «يُزامَن» لا تُعلَن إلّا برؤية صفٍّ جاء
+         من الخادم فعلًا — وإلّا بقي الوعد في الواجهة بلا إثبات (وقد تكرّر ذلك). */
+      if(mapped.length) SYNC.summonsFromServer=true;
+    }
 
     /* ---------- ⑥ الشكاوى — صندوق **المدرسة** لا صندوق الجهاز ----------
        كانت الشكوى تُحفظ محلّيًا فقط وتُعلَن «وصلت للإدارة»، وهي لم تغادر

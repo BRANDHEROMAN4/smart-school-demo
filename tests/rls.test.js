@@ -187,6 +187,9 @@ async function main() {
   console.log("\n▸ النقاط: أوّل كتابة لها من دفتر المعلّمة");
   await testGradesWrite(db);
 
+  console.log("\n▸ الواجبات والاستدعاءات وسجلّ البوابة: من يكتب ماذا");
+  await testOtherTables(db);
+
   await db.end();
 
   // ---------------------------------------------------------- الحصيلة
@@ -879,6 +882,140 @@ async function testGradesWrite(db) {
       () => db.query(`insert into grades (student_id,subject,term,label,kind,mark)
                       values ($1,$2,3,'من الولي','summative',10)`, [S.amina, SUBJ]),
       "والولي كذلك"
+    );
+  });
+}
+
+/* ══════════════ الواجبات والاستدعاءات وسجلّ البوابة ══════════════
+   كانت الثلاثة تُكتب في مصفوفة محلّية فقط: تنشر المعلّمة واجبًا فلا يراه
+   التلاميذ على أجهزتهم، وتُصدر الإدارة استدعاءً فلا يعلم به وليّ الأمر،
+   ويعبر الجميع البوابة فلا يُسجَّل شيء. وهنا نقيس **من يكتب ماذا** بعينه —
+   فالثلاثة ليست سياسةً واحدة، بل ثلاث:
+
+     · homework — can_record  (مدير · معلّمة · ناظر)
+     · summons  — مدير وناظر فقط (المعلّمة والأمانة لا تُصدران استدعاءً)
+     · gate_log — مدير وناظر وأمانة (من يقف على الباب) — **وإضافة فقط** */
+async function testOtherTables(db) {
+  await as(db, S.uTeacher, async () => {
+    await allowed(
+      () => db.query(`insert into homework (class_label,subject,title,due_on,client_id)
+                      values ('1أ','الرياضيات','واجب الإثبات','2026-09-21','cid-hw-1')
+                      on conflict (client_id) do update set title=excluded.title`),
+      "المعلّمة تنشر واجبًا — الصفّ كما يبنيه العميل (بلا school_id ولا created_by)"
+    );
+    /* واجبٌ لقسمٍ آخر: بدونه صار فحص «لا ترى واجبات قسم آخر» يقيس صفرًا في
+       صفر — أي لا يقيس شيئًا. وهو بالضبط ما كسره خيار «الكل» في الواجهة. */
+    await allowed(
+      () => db.query(`insert into homework (class_label,subject,title,client_id)
+                      values ('2ب','الرياضيات','واجب قسم آخر','cid-hw-2')
+                      on conflict (client_id) do update set title=excluded.title`),
+      "وواجبًا لقسم آخر (ليكون لفحص العزل ما يقيسه)"
+    );
+    await denied(
+      () => db.query(`insert into summons (student_id,reason) values ($1,'لقاء')`, [S.amina]),
+      "والمعلّمة لا تُصدر استدعاءً (للمدير والناظر وحدهما)"
+    );
+    await denied(
+      () => db.query(`insert into gate_log (student_id,at_time,day) values ($1,'08:10',current_date)`, [S.amina]),
+      "ولا تكتب سجلّ البوابة (من يقف على الباب: المدير والناظر والأمانة)"
+    );
+  });
+
+  await as(db, S.uDirector, async () => {
+    await allowed(
+      () => db.query(`insert into summons (student_id,reason,due_on,status,client_id)
+                      values ($1,'لقاء أولياء','2026-09-25','مُرسَل','cid-sm-1')
+                      on conflict (client_id) do update set reason=excluded.reason`, [S.amina]),
+      "المدير يُصدر استدعاءً"
+    );
+    /* واستدعاءً لتلميذة أخرى — بنفس سبب الواجب أعلاه. */
+    await allowed(
+      () => db.query(`insert into summons (student_id,reason,status,client_id)
+                      values ($1,'لقاء تلميذة أخرى','مُرسَل','cid-sm-2')
+                      on conflict (client_id) do update set reason=excluded.reason`, [S.salma]),
+      "واستدعاءً لتلميذة أخرى"
+    );
+    await allowed(
+      () => db.query(`insert into gate_log (student_id,at_time,day,late,client_id)
+                      values ($1,'08:10','2026-01-15',false,'cid-gl-1')
+                      on conflict (client_id) do nothing`, [S.amina]),
+      "ويكتب سجلّ البوابة"
+    );
+    /* إعادة الإرسال: البوابة **إضافة فقط** — لا سياسة UPDATE في المخطّط.
+       فلو أرسلها العميل بـmerge لردّه الخادم 42501 وأنذر المديرة إنذارًا
+       كاذبًا والأثر قد وصل. ولذلك هي في INSERT_ONLY في العميل. */
+    let code = null;
+    try {
+      await db.query(`insert into gate_log (student_id,at_time,day,client_id)
+                      values ($1,'08:20','2026-01-15','cid-gl-1')
+                      on conflict (client_id) do update set at_time=excluded.at_time`, [S.amina]);
+    } catch (e) { code = e.code; }
+    eq(code, "42501", "وإعادة إرسالها بـmerge تُرفض ⇒ لهذا يُرسلها العميل بـDO NOTHING");
+  });
+
+  await as(db, S.uReception, async () => {
+    await allowed(
+      () => db.query(`insert into gate_log (student_id,at_time,day,client_id)
+                      values ($1,'07:55','2026-01-16','cid-gl-2')
+                      on conflict (client_id) do nothing`, [S.amina]),
+      "والأمانة تكتب سجلّ البوابة (هي التي على الباب)"
+    );
+    await denied(
+      () => db.query(`insert into summons (student_id,reason) values ($1,'لقاء')`, [S.amina]),
+      "ولا تُصدر استدعاءً"
+    );
+    /* وأثرُ العبور شيء، وتثبيتُ حضور اليوم شيء آخر: `attendance_write` تشترط
+       `can_record()` وهي لا تشمل الأمانة. وهذا هو الحدّ الذي يحترمه العميل
+       (`canRecord` في index.html قبل إرسال attendance من شاشة البوابة) —
+       فالاختبار يحرس ما يجمع الطرفين: لو وُسِّعت السياسة يومًا، ظهر الفرق
+       هنا ولم يبقَ شرط العميل تخمينًا. */
+    await denied(
+      () => db.query(`insert into attendance (school_id,student_id,day,state)
+                      values ($1,$2,'2026-03-02','present')`, [S.school, S.amina]),
+      "ولا تُثبّت حضور اليوم (attendance تشترط can_record — والأمانة ليست فيه)"
+    );
+    await denied(
+      () => db.query(`insert into attendance (school_id,student_id,day,state)
+                      values ($1,$2,'2026-03-02','present')
+                      on conflict (student_id,day) do update set state=excluded.state`,
+                    [S.school, S.amina]),
+      "ولا بـmerge كذلك (الطريق نفسه: الإدراج مردودٌ بالسياسة)"
+    );
+  });
+
+  /* العدد المرجعي يُقرأ **خارج RLS** (بصلاحية المالك) — فلا يعتمد الاختبار على
+     ترتيب ما سبقه: الناظر يُصدر استدعاءً لأمينة قبل هذه الكتلة، وقسمٌ آخر يحمل
+     واجبًا. النمط نفسه المتَّبع في اختبار الإشراف: «مرجعٌ يُقاس مرّةً ثم يُقابَل»،
+     فلا يصير رقمٌ في الاختبار صدىً لترتيب الكتل. */
+  const hwMine  = await count(db, `select count(*)::int n from homework where class_label='1أ'`);
+  const hwOther = await count(db, `select count(*)::int n from homework where class_label<>'1أ'`);
+  const smMine  = await count(db, `select count(*)::int n from summons where student_id=$1`, [S.amina]);
+  const smOther = await count(db, `select count(*)::int n from summons where student_id<>$1`, [S.amina]);
+  eq(hwOther > 0, true, "المرجع: في المدرسة واجبٌ لقسمٍ آخر (وإلّا فالفحص أعمى)");
+  eq(smOther > 0, true, "ولغير أمينة استدعاءٌ كذلك (وإلّا فالفحص أعمى)");
+
+  await as(db, S.uAmina, async () => {
+    eq(await count(db, `select count(*)::int n from homework`), hwMine,
+       "التلميذة ترى واجبات قسمها كلّها — ولا يفلت منها شيء");
+    eq(await count(db, `select count(*)::int n from homework where class_label<>'1أ'`), 0,
+       "ولا ترى واجب قسم آخر (وهو ما كسره خيار «الكلّ» لو وصل class_label='الكل')");
+    eq(await count(db, `select count(*)::int n from summons where student_id=$1`, [S.amina]), smMine,
+       "وترى استدعاءاتها هي كلّها");
+    eq(await count(db, `select count(*)::int n from summons where student_id<>$1`, [S.amina]), 0,
+       "ولا ترى استدعاء غيرها");
+    eq(await count(db, `select count(*)::int n from gate_log`), 0,
+       "ولا ترى سجلّ البوابة (شأن الإدارة)");
+    await denied(
+      () => db.query(`insert into homework (class_label,subject,title) values ('1أ','ر','و')`),
+      "ولا تنشر واجبًا"
+    );
+    await denied(
+      () => db.query(`insert into summons (student_id,reason) values ($1,'من التلميذة')`, [S.amina]),
+      "ولا تُصدر استدعاءً على نفسها"
+    );
+    await denied(
+      () => db.query(`insert into gate_log (student_id,at_time,day) values ($1,'10:00',current_date)`, [S.amina]),
+      "ولا تكتب سجلّ البوابة"
     );
   });
 }

@@ -341,6 +341,51 @@ function main() {
       "والجلب يُنجي المعلَّق قبل BOOK={} ويُعيد ربطه بالـuuid");
   }
 
+  /* ------------------------------- ⑨ الوعد بالوصول يقابله إرسالٌ فعليّ */
+  /*  عطلان من العائلة نفسها: وعدٌ في الواجهة لا يقابله شيء.
+      ① «الكل» في نموذج الواجب: يُخزَّن حرفيًّا `class_label='الكل'`، وسياسة
+         القراءة تشترط `s.class_label = homework.class_label` — ولا تلميذة
+         اسمها قسمها «الكل» ⇒ الصفّ يراه الطاقم **ولا تراه تلميذة أبدًا**،
+         والرسالة تقول إنّه سيظهر لهنّ. الحارس: التوسيع دالّة، والنموذج يناديها.
+         (اختبار السلوك يقيس `homeworkRows`؛ هنا نمنع أن يبقى النموذج لا يناديها
+         فتصير الدالّة المقيسة **دعوى** لا مسارًا.)
+      ② حضور البوابة: شاشتها متاحة لدور الأمانة، و`attendance_write` على الخادم
+         تشترط `can_record()` **والأمانة ليست فيها** ⇒ كل عبور يُردّ 42501، وهو
+         ليس في PERMANENT_FAIL ⇒ ثماني محاولات ثم إنذار لا يُفهَم. الحارس:
+         الإرسال مشروط بـ`canRecord` في الدالّتين، لا في إحداهما. */
+  console.log("\n▸ الوعد في الواجهة يقابله إرسالٌ فعليّ (وإلّا فهو دعوى)");
+  {
+    const body = (fn) => {
+      const i = HTML.indexOf(`function ${fn}(`);
+      if (i < 0) return null;
+      /* المدى: من التعريف إلى أول `\n}` في بداية سطر — يشمل الجسم كلّه. */
+      const j = HTML.indexOf("\n}", i);
+      return j < 0 ? HTML.slice(i) : HTML.slice(i, j);
+    };
+
+    chk(!!body("homeworkRows"), "homeworkRows معرَّفة (توسيع «الكل» إلى صفوف)");
+    chk(!!body("expandClasses"), "وexpandClasses معرَّفة (المنطق في موضع واحد)");
+    const hw = body("postHomework") || "";
+    chk(/homeworkRows\s*\(/.test(hw),
+      "ونموذج النشر ينادي homeworkRows (وإلّا بقي الإرسال بقسمٍ اسمه «الكل»)",
+      "النموذج لا يناديها ⇒ الصفّ يذهب بـclass_label='الكل' ولا تراه تلميذة");
+    chk(!/class_label\s*:\s*picked|class_label\s*:\s*"الكل"/.test(HTML),
+      "ولا يُبنى صفُّ واجب بقسمٍ مأخوذٍ من القائمة مباشرةً (يُوسَّع قبله)");
+
+    /* الحضور من شاشة البوابة: الشرط في الدالّتين معًا. */
+    const scan = body("simulateScan") || "";
+    const man = body("markPresent") || "";
+    chk(/canRecord\s*\(currentRole\)/.test(scan),
+      "الإرسال من «محاكاة عبور» مشروطٌ بـcanRecord");
+    chk(/canRecord\s*\(currentRole\)/.test(man),
+      "والإرسال من «تحضير يدوي» مشروطٌ به كذلك");
+    chk(countWord("canRecord") >= 3,
+      "وcanRecord مُستعملة فعلًا (تعريفٌ بلا نداء لا يحمي شيئًا)");
+    /* الطرف الآخر: أثر العبور لا يُشترط به الدور — الأمانة لها `gate_write`. */
+    chk(/enqueue\("gate_log"/.test(scan) && !/canRecord\(currentRole\)[\s\S]{0,80}enqueue\("gate_log"/.test(scan),
+      "وسجلّ البوابة يُرسَل بلا شرط دور (الأمانة تكتبه على الخادم)");
+  }
+
   /* ------------------------------------------------------------ الحصيلة */
   console.log("\n" + "─".repeat(64));
   console.log(`__EDUVIA_SUITE_DONE__ ok=${pass} fail=${failures.length}`);

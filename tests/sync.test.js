@@ -89,8 +89,12 @@ function makeSandbox({ students = [], notes = [], complaints = [], online = true
     students,
     /* غيابها كان يجعل hydrate() يرمي ReferenceError في البيئة المعزولة
        فتبدو ناجحةً وهي لم تُنفَّذ أصلًا.
-       `complaints` كذلك: معرَّف خارج بلوك المزامنة، وhydrate() يُعيد إسناده. */
-    NOTES: notes, complaints, nextId: 1, teachers: [], gateLog: [], notifs: [],
+       `complaints` كذلك: معرَّف خارج بلوك المزامنة، وhydrate() يُعيد إسناده.
+       وبعد إضافة قراءة الواجبات والاستدعاءات صار لزامًا تعريفُهما أيضًا —
+       وإلّا رمى hydrate عند `HOMEWORK.filter` **قبل** بلوغ الشكاوى، فسقط
+       مفتاحُها من الاختبار بلا أن يعلن سببه. */
+    NOTES: notes, complaints, HOMEWORK: [], SUMMONS: [],
+    nextId: 1, teachers: [], gateLog: [], notifs: [],
   };
   sandbox.window = {
     addEventListener: () => {},
@@ -103,11 +107,12 @@ function makeSandbox({ students = [], notes = [], complaints = [], online = true
     `\n;globalThis.__T={SYNC,QUEUE,enqueue,flushQueue,renderSyncChip,toEmail,eduviaLogin,` +
     `buildAccounts,sha256,loadQueue,saveQueue,DEMO_STAFF,DEMO_PIN_STUDENT,newClientId,` +
     `rowFor,NOTE_STATUS_DB,ATT_STATE_DB,cloudIdOf,sidOrNull,hydrate,pendingClientIds,` +
+    `canRecord,expandClasses,homeworkRows,` +
     `complaintRow,ensureUid,bookKey,bookOf,computeMark,recalcStudent,marksMissing,` +
     /* BOOK و announcements ارتباطان معجميان من النصّ المستخرج ⇒ نُخرجهما
        بقارئ (getter) وإلّا قرأ الاختبار خاصيّةً أخرى غير التي تعدّلها الدوال. */
     `get BOOK(){return BOOK}, get NOTES(){return NOTES}, get announcements(){return announcements},` +
-    `get complaints(){return complaints}};`,
+    `get complaints(){return complaints}, get HOMEWORK(){return HOMEWORK}, get SUMMONS(){return SUMMONS}};`,
     sandbox,
     { filename: "eduvia-sync.js" }
   );
@@ -641,6 +646,98 @@ async function main() {
       sandbox.students.push({ id: 9, cloudId: null, name: "ج", cls: "1أ", marks: [], avg: [] });
       eq(T.rowFor("grades", { student_id: 9, subject: "ر", term: 0, label: "ف", mark: 5 }), null,
          "تلميذة بلا uuid ⇒ لا نُرسل صفًّا نعرف أنّ الخادم سيرفضه");
+    }
+
+    /* الواجبات والاستدعاءات وسجلّ البوابة — كانت الثلاثة تُكتب في مصفوفة
+       محلّية فقط: تنشر المعلّمة واجبًا فيظهر عندها وحدها، وترسل الإدارة
+       استدعاءً فلا يعلم به وليّ الأمر، ويعبر التلميذ البوابة فلا يعلم الخادم. */
+    {
+      const { T, sandbox } = makeSandbox({ mode: "remote" });
+      sandbox.students.push({ id: 7, cloudId: "u-7", name: "س", cls: "1أ", marks: [], avg: [] });
+
+      const h = T.rowFor("homework", { cls: "1أ", subj: "الرياضيات", title: "واجب", due_on: "2026-09-21" });
+      eq(h.class_label, "1أ", "الواجب: القسم في عموده الصحيح");
+      eq(h.due_on, "2026-09-21", "والتاريخ تاريخٌ لا نصٌّ حرّ — النصّ الحرّ يردّه Postgres 22P02");
+      eq(h.school_id, undefined, "ولا school_id من العميل (مشغّل الخادم يشتقّه)");
+      eq(T.rowFor("homework", { cls: "1أ", subj: "ر", title: "و", due_on: "" }).due_on, null,
+         "وبلا تاريخ ⇒ null لا سلسلة فارغة (العمود من نوع date)");
+
+      const s = T.rowFor("summons", { sid: 7, reason: "لقاء أولياء", due_on: "2026-09-25", client_id: "cs1" });
+      eq(s.student_id, "u-7", "الاستدعاء مرتبط بالتلميذة بـuuid لا برقمها");
+      eq(s.due_on, "2026-09-25", "وبتاريخه");
+      eq(s.client_id, "cs1", "والمعرّف المحلّي يمرّ — به يُطوى التكرار");
+      sandbox.students.push({ id: 9, cloudId: null, name: "ج", cls: "1أ", marks: [], avg: [] });
+      eq(T.rowFor("summons", { sid: 9, reason: "لقاء" }), null,
+         "تلميذة بلا uuid ⇒ لا استدعاء بلا صاحب (وإلّا رآه الجميع محلّيًّا ولا أحد في RLS)");
+
+      const g = T.rowFor("gate_log", { student_id: 7, at_time: "08:10", day: "2026-10-12", late: true });
+      eq(g.at_time, "08:10", "البوابة: وقت العبور كما هو");
+      eq(g.late, true, "وعلامة التأخّر محفوظة");
+      eq(T.rowFor("gate_log", { student_id: 9, at_time: "08:10", day: "2026-10-12" }), null,
+         "وتلميذة بلا uuid ⇒ لا صفّ");
+
+      /* الأسلوب: البوابة **إضافة-فقط** (لا سياسة UPDATE في المخطّط، فإرسالها
+         بـmerge يردّها الخادم 42501 ويُنذر المديرة إنذارًا كاذبًا والأثر قد وصل)،
+         والواجب والاستدعاء يُحدَّثان. */
+      const srv2 = badServer([{ error: null }, { error: null }, { error: null }]);
+      T.SYNC.client = srv2; T.SYNC.online = true; T.QUEUE.length = 0;
+      T.enqueue("gate_log", g);
+      T.enqueue("homework", h);
+      T.enqueue("summons", s);
+      await T.flushQueue();
+      eq(srv2.calls.length, 3, "الثلاثة أُرسلت");
+      eq(srv2.calls[0].opts.ignoreDuplicates, true, "البوابة ⇒ DO NOTHING (لا سياسة تعديل عليها)");
+      eq(!srv2.calls[1].opts.ignoreDuplicates, true, "الواجب ⇒ DO UPDATE (يُصحَّح لا يُهمَل)");
+      eq(srv2.calls[1].opts.onConflict, "client_id", "ومفتاحه client_id");
+      eq(!srv2.calls[2].opts.ignoreDuplicates, true, "والاستدعاء كذلك يُحدَّث");
+    }
+
+    /* «الكل» ليس قسمًا في القاعدة: سياسة القراءة تشترط `s.class_label =
+       homework.class_label` ولا تلميذة اسمها قسمها «الكل» ⇒ الصفّ يراه الطاقم
+       **ولا تراه تلميذة أبدًا** — وهو الخيار الافتراضي في القائمة، فيبدو الواجب
+       منشورًا وهو لم يُنشَر لأحد. نقيس التوسيع لا نصفه. */
+    console.log("\n▸ «الكل»: صفٌّ لكل قسم، لا صفٌّ بقسمٍ اسمه «الكل»");
+    {
+      const { T } = makeSandbox();
+      const all = ["1أ", "1ب", "4ب"];
+
+      const one = T.homeworkRows("1أ", all, "رياضيات", "واجب", "2026-09-21");
+      eq(one.length, 1, "قسمٌ واحد ⇒ صفٌّ واحد");
+      eq(one[0].row.class_label, "1أ", "وقسمه الحقيقي");
+      eq(one[0].local.cls, "1أ", "والصفّ المحلّي كذلك");
+
+      const many = T.homeworkRows("الكل", all, "رياضيات", "واجب", "2026-09-21");
+      eq(many.length, all.length, "«الكل» ⇒ صفٌّ لكل قسم معرَّف");
+      eq(many.map(x => x.row.class_label).join("|"), all.join("|"),
+         "والأقسام هي الأقسام نفسها — لا «الكل» بينها");
+      eq(many.filter(x => x.row.class_label === "الكل").length, 0,
+         "ولا يُرسَل `class_label='الكل'` أبدًا (سيصير غير مرئي لكل تلميذة)");
+      eq(new Set(many.map(x => x.row.client_id)).size, all.length,
+         "ولكل صفٍّ clientId خاصّ — به يُطوى التكرار ويُنجى المعلَّق صفًّا صفًّا");
+
+      /* التطابق مع العرض المحلّي: ما يراه الطاقم هو ما يُرسَل بالضبط. */
+      eq(many.map(x => x.local.cls).join("|"), many.map(x => x.row.class_label).join("|"),
+         "الصفّ المحلّي والقاعدة يقولان القسم نفسه (فلا تفترق الشاشتان بصمت)");
+
+      eq(T.homeworkRows("الكل", [], "ر", "و", "").length, 0,
+         "وبلا أقسام معرَّفة ⇒ لا صفوف (وتُعلَن، لا تُنشَر لـ«الكل»)");
+      eq(T.expandClasses("الكل", all).length, 3, "expandClasses: «الكل» ⇒ القائمة كلها");
+      eq(T.expandClasses("1ب", all).join(""), "1ب", "وغير «الكل» ⇒ نفسه وحده");
+    }
+
+    /* الحدّ الذي يحترمه العميل: `can_record()` على الخادم لا تشمل الأمانة،
+       وشاشة البوابة متاحة للأمانة. فإرسال `attendance` منها يردّه الخادم 42501
+       (وهو ليس في PERMANENT_FAIL ⇒ ثماني محاولات ثم إنذار لا يُفهَم). */
+    console.log("\n▸ من يملك `can_record` — مرآة سياسة الخادم");
+    {
+      const { T } = makeSandbox();
+      truthy(T.canRecord("director"), "المدير يكتب الحضور");
+      truthy(T.canRecord("teacher"), "والمعلّمة");
+      truthy(T.canRecord("supervisor"), "والناظر");
+      eq(T.canRecord("reception"), false,
+         "**والأمانة لا** — وهي تقف على الباب، فتُسجّل gate_log لا حضور اليوم");
+      eq(T.canRecord("student"), false, "والتلميذة لا");
+      eq(T.canRecord("inspector"), false, "ولا المفتّش");
     }
   }
 

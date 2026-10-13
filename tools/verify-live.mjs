@@ -111,7 +111,10 @@ const whoami = async (tok) => {
   const stu = await login(student[1], student[4]);
   const dir = await login(director[1], director[4]);
   const tea = teacher ? await login(teacher[1], teacher[4]) : null;
-  ok(`دخول ${student[1]} و${director[1]}${teacher ? " و" + teacher[1] : ""} — كلّهم نالوا جلسة`);
+  /* الأمانة: هي التي تقف على الباب — ولها `gate_write` وحدها دون `can_record`. */
+  const recepRow = rows.find((c) => c[1] === "reception");
+  const recep = recepRow ? await login(recepRow[1], recepRow[4]) : null;
+  ok(`دخول ${student[1]} و${director[1]}${teacher ? " و" + teacher[1] : ""}${recepRow ? " و" + recepRow[1] : ""} — كلّهم نالوا جلسة`);
 
   /* اختبار سابق قد يترك اعتراضًا معلّقًا. نبدأ من حالة نظيفة، وإلّا قاس
      الإثباتُ أثرًا قديمًا لا سلوكًا حاليًّا. */
@@ -392,6 +395,101 @@ const whoami = async (tok) => {
       const d2 = await fetch(`${URL_}/rest/v1/grades?client_id=eq.${encodeURIComponent(gid + "-s")}`, { method: "DELETE", headers: H(dir) });
       ok(`حُذف أثر الإثبات (${d1.status}/${d2.status}) — والدفتر عاد كما كان`);
     }
+  }
+
+  /* ---------- ⑫ الواجب والاستدعاء وسجلّ البوابة — من يكتب، ومن يرى ----------
+     ثلاثة جداول كانت مصفوفات محلّية: تنشر المعلّمة واجبًا فلا تراه تلميذة،
+     وتُصدر الإدارة استدعاءً فلا تعلم به ابنُها، ويعبر التلاميذ البوابة فلا
+     يُسجَّل شيء. والنقيس هنا **صفّ `rowFor` نفسه** (بلا school_id)، ثم مقروءًا
+     بعين كل دور — لأنّ العطل في هذا المشروع كان دائمًا في المسافة بين ما
+     يُرسَل وما يمكن رؤيته.
+     وفيه إثباتٌ سلبيّ مقصود: «الكل» خيارٌ افتراضي في الواجهة وليس قسمًا في
+     القاعدة ⇒ يُقبَل كتابةً ولا تراه تلميذة. هذا هو العطل الذي دفع إلى توسيعه
+     في العميل، ويُقاس حيًّا كي لا يكون التوسيع دعوى. */
+  console.log("\n▸ ⑫ الواجبات والاستدعاءات وسجلّ البوابة على الخادم الحقيقي");
+  {
+    const me = await get("students", "select=id,class_label&limit=1", stu);
+    const sid = (me.body || [])[0]?.id, scls = (me.body || [])[0]?.class_label;
+    chk(!!sid && !!scls, `uuid التلميذة وقسمها من الخادم («${scls}»)`,
+        JSON.stringify(me.body).slice(0, 140));
+    const tag = "v-" + Date.now().toString(36);
+    const today = new Date().toISOString().slice(0, 10);
+    /* upsert مفتاحه client_id — نفس ما يفعله العميل بالضبط */
+    const up = (t, row, tok) => fetch(`${URL_}/rest/v1/${t}?on_conflict=client_id`, {
+      method: "POST",
+      headers: { ...H(tok), Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(row),
+    });
+
+    if (tea) {
+      const h1 = await up("homework",
+        { class_label: scls, subject: "الرياضيات", title: "إثبات آلي — يمكن حذفه",
+          due_on: null, client_id: tag + "-hw" }, tea);
+      const h1b = await h1.json().catch(() => null);
+      chk(h1.status === 201 && h1b?.length === 1,
+          "المعلّمة تنشر واجبًا — الصفّ كما يبنيه العميل (بلا school_id ولا created_by)",
+          `HTTP ${h1.status} · ${JSON.stringify(h1b).slice(0, 160)}`);
+      chk(!!h1b?.[0]?.school_id, "وschool_id وُسم من الخادم لا من العميل");
+      const seen = await get("homework", `select=id,class_label&client_id=eq.${tag}-hw`, stu);
+      chk((seen.body || []).length === 1,
+          "والتلميذة ترى واجب قسمها (كانت لا تعلم به)",
+          JSON.stringify(seen.body).slice(0, 140));
+
+      /* الإثبات السلبي: «الكل» */
+      const hAll = await up("homework",
+        { class_label: "الكل", subject: "الرياضيات", title: "إثبات آلي — «الكل»",
+          due_on: null, client_id: tag + "-all" }, tea);
+      chk(hAll.status === 201, "و«الكل» يُقبَل كتابةً (لا قيد في القاعدة يمنعه — لذا العطل صامت)");
+      const seenAll = await get("homework", `select=id&client_id=eq.${tag}-all`, stu);
+      chk((seenAll.body || []).length === 0,
+          "لكن لا تراه تلميذة واحدة ⇒ لهذا يُوسَّع «الكل» في العميل إلى صفٍّ لكل قسم",
+          "لو ظهر هنا فسياسة القراءة تغيّرت — راجعي hw_read قبل تعديل العميل");
+    } else {
+      no("لا حساب معلّمة في roster.csv — تُخطّى واجبات ⑫");
+    }
+
+    const s1 = await post("summons",
+      { student_id: sid, reason: "إثبات آلي — يمكن حذفه", due_on: null,
+        status: "مُرسَل", client_id: tag + "-sm" }, dir);
+    chk(s1.status === 201, "المديرة تُصدر استدعاءً حيًّا",
+        `HTTP ${s1.status} · ${JSON.stringify(s1.body).slice(0, 160)}`);
+    const smSeen = await get("summons", `select=id,student_id&client_id=eq.${tag}-sm`, stu);
+    chk((smSeen.body || []).length === 1, "والتلميذة ترى استدعاءها (كان لا يعلم به أحد)");
+
+    if (tea) {
+      const sBad = await post("summons",
+        { student_id: sid, reason: "من المعلّمة", client_id: tag + "-smt" }, tea);
+      chk(sBad.status === 403, "والمعلّمة لا تُصدر استدعاءً (للمدير والناظر وحدهما)",
+          `HTTP ${sBad.status}`);
+    }
+
+    /* الأمانة على الباب: تكتب العبور ولا تُثبّت حضور اليوم — وهذا بعينه ما
+       يحترمه العميل بـ`canRecord`. نقطةٌ تُقاس حيًّا لأنّ الخطأ فيها لا يظهر
+       إلّا كإنذار «ردّه الخادم نهائيًّا» بعد ثماني محاولات. */
+    if (recep) {
+      const gl = await post("gate_log",
+        { student_id: sid, at_time: "07:45", day: today, late: false, client_id: tag + "-gl" }, recep);
+      chk(gl.status === 201, "الأمانة تُسجّل عبورًا في سجلّ البوابة (هي التي على الباب)",
+          `HTTP ${gl.status} · ${JSON.stringify(gl.body).slice(0, 140)}`);
+      const att = await post("attendance",
+        { student_id: sid, day: today, state: "present", at_time: "07:45" }, recep);
+      chk(att.status === 403,
+          "ولا تُثبّت حضور اليوم (attendance تشترط can_record) ⇒ لهذا لا يُرسِله العميل منها",
+          `HTTP ${att.status} · ${JSON.stringify(att.body).slice(0, 140)}`);
+    } else {
+      no("لا حساب أمانة في roster.csv — تُخطّى كتابة سجلّ البوابة");
+    }
+
+    if (!KEEP) {
+      const dH = await fetch(`${URL_}/rest/v1/homework?client_id=in.("${tag}-hw","${tag}-all")`,
+        { method: "DELETE", headers: H(dir) });
+      const dS = await fetch(`${URL_}/rest/v1/summons?client_id=eq.${encodeURIComponent(tag + "-sm")}`,
+        { method: "DELETE", headers: H(dir) });
+      ok(`حُذف أثر الإثبات في الواجبات والاستدعاءات (${dH.status}/${dS.status})`);
+    }
+    /* سجلّ البوابة **إضافة فقط** بالقصد: لا سياسة UPDATE ولا DELETE عليه.
+       فالصفّ يبقى — يُعلَن ولا يُخفى. */
+    console.log(`\x1b[33m⚠️  بقي صفٌّ واحد في gate_log بـclient_id=${tag}-gl — لا سياسة حذف عليه بالقصد\x1b[0m`);
   }
 
   console.log("\n" + "─".repeat(64));
