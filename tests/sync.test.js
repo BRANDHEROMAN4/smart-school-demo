@@ -51,6 +51,9 @@ const ACADEMICS = slice("function assignAcademics(s){", "\nfunction setAcc(k){")
 /* complaintRow يسكن منطقة الواجهة خارج بلوك المزامنة، وهو ما يبني الصفّ
    المُرسَل فعلًا — فنستخرجه كما هو بدل نسخة مزيّفة في الاختبار. */
 const COMPLAINTS = slice("function complaintRow(c,over){", "\nasync function submitComplaint(");
+/* ونِسبةُ الحضور (stats/pctTxt) تسكن منطقة الواجهة كذلك — وهي **ما نحكم به**
+   على «نسبة الحضور»، فنسخةٌ مزيّفة منها في الاختبار كانت ستُخفي العطل المقيس. */
+const ATTSTATS = slice("function stats(){", "function pill(");
 
 /* ------------------------------------------------------------- الإحصاء */
 let pass = 0;
@@ -103,11 +106,11 @@ function makeSandbox({ students = [], notes = [], complaints = [], online = true
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(
-    CONSTS + "\n" + ACADEMICS + "\n" + COMPLAINTS + "\n" + BLOCK +
+    CONSTS + "\n" + ACADEMICS + "\n" + COMPLAINTS + "\n" + ATTSTATS + "\n" + BLOCK +
     `\n;globalThis.__T={SYNC,QUEUE,enqueue,flushQueue,renderSyncChip,toEmail,eduviaLogin,` +
     `buildAccounts,sha256,loadQueue,saveQueue,DEMO_STAFF,DEMO_PIN_STUDENT,newClientId,` +
     `rowFor,NOTE_STATUS_DB,ATT_STATE_DB,cloudIdOf,sidOrNull,hydrate,pendingClientIds,` +
-    `canRecord,expandClasses,homeworkRows,` +
+    `canRecord,expandClasses,homeworkRows,stats,pctTxt,` +
     `complaintRow,ensureUid,bookKey,bookOf,computeMark,recalcStudent,marksMissing,` +
     /* BOOK و announcements ارتباطان معجميان من النصّ المستخرج ⇒ نُخرجهما
        بقارئ (getter) وإلّا قرأ الاختبار خاصيّةً أخرى غير التي تعدّلها الدوال. */
@@ -423,6 +426,10 @@ async function main() {
     eq(S[1].notify, "تطبيق", "تفضيل الإشعار: app ← تطبيق");
     eq(S[0].state, "late", "حالة اليوم من سجلّ الحضور");
     eq(S[0].time, "08:20", "وقت الدخول من الخادم");
+    /* ⚠️ العطل الذي أُغلق: كان الافتراضي «حاضرة» ⇒ من لا صفّ حضور لها اليوم
+       تُحسَب وافدة، فتقرأ اللوحة ١٠٠٪ والبوابة لا تجد منتظرة. */
+    eq(S[1].state, "pending", "من لا صفَّ حضور لها اليوم: «لم تُسجَّل» — لا «حاضرة»");
+    eq(S[1].time, null, "وبلا وقت دخول مُصطنع");
 
     /* الدفتر مفتاحه (تلميذة | فصل | مادة) — والفصل داخل المفتاح مقصود. */
     const b = T.BOOK[T.bookKey(S[0].id, 0, "اللغة العربية")];
@@ -466,6 +473,53 @@ async function main() {
     eq(C.find(x => x.serverId === "c1").target, "النظافة", "الهدف من عموده (sql/006 مُشغَّل)");
     eq(T.SYNC.complaintsMeta, true, "فحص القدرة: العمودان موجودان ⇒ لا احتياط");
     eq(r.objections, 1, "اعتراض معلّق واحد يُبلَّغ عنه للمديرة عند الدخول");
+
+    /* ── الجلب لا يدهس غيابًا لم يصل ─────────────────────────────────────
+       المعلّمة سجّلت غيابًا بلا شبكة (صفٌّ في الطابور)، ثم عاد الاتصال
+       فجُلب كل شيء. مصفوفة `students` تُبنى **من الصفر** ⇒ بلا حارس يرتدّ
+       الصفّ «لم تُسجَّل» أمام عينيها وتظنّ تسجيلها ضاع. وهذه مخالفةٌ صريحة
+       لمبدأ hydration المُعلَن (‏«لا ندهس تغييرًا معلّقًا») — وكان الحضور
+       يخالفه وحده بينما الملاحظات والشكاوى تحترمه. */
+    {
+      const s2 = makeSandbox({ mode: "remote" });
+      const T2 = s2.T;
+      T2.SYNC.client = fakeServer(DATA);
+      /* تلميذة لها uuid الخادم — وبه يُربَط صفُّ الطابور (rowFor يمرّر
+         student_id على sidOrNull ⇒ ما في الطابور uuid لا رقمٌ محلّي). */
+      s2.sandbox.students = [{ id: 1, cloudId: "a2", name: "آية بن ساسي", cls: "1أ",
+                               state: "absent", time: null }];
+      T2.enqueue("attendance", T2.rowFor("attendance",
+        { student_id: 1, day: TODAY, state: "absent", at_time: null }));
+      await T2.hydrate();
+      eq(s2.sandbox.students.find(x => x.cloudId === "a2").state, "absent",
+        "غيابٌ في الطابور لم يصل الخادم: الجلب لا يدهسه");
+      eq(s2.sandbox.students.find(x => x.cloudId === "a1").state, "late",
+        "وغير المعلَّقة تُصحَّح من صفّ الخادم (الحراسة ليست شللًا)");
+    }
+
+    /* ── «نسبة الحضور» لا تُقاس على من لم يُسجَّل ─────────────────────────
+       قسمةُ الوافدات على الإجمالي تقول «٠٪» في الثامنة صباحًا — كذبةٌ في
+       الاتجاه المعاكس لعطل «حاضرة للجميع». والمقام الصادق: ما قُيِّد. */
+    {
+      const s3 = makeSandbox({ mode: "local" });
+      s3.sandbox.students = [
+        { id: 1, state: "present" }, { id: 2, state: "absent" }, { id: 3, state: "pending" },
+      ];
+      eq(s3.T.stats().pct, 50, "النسبة على المُسجَّلتين (وافدة/غائبة) لا على الثلاث");
+      eq(s3.T.stats().pending, 1, "ومن لم تُسجَّل معدودة على حِدة");
+      eq(s3.T.stats().recorded, 2, "و«المُسجَّلات» = وافدة + غائبة");
+      s3.sandbox.students = [{ id: 1, state: "pending" }];
+      eq(s3.T.stats().pct, null, "ولا شيء قُيِّد ⇒ null (تُعرَض «—») لا صفر");
+      eq(s3.T.pctTxt(null), "—", "pctTxt: لا شيء ⇒ «—»");
+      eq(s3.T.pctTxt(0), "0%", "والصفر الحقيقي يُعرَض صفرًا (ليست هي الحالة نفسها)");
+
+      /* صفّ الغياب الذي يبنيه markAbsent — الشكل حين يصل الخادم. */
+      const absRow = s3.T.rowFor("attendance",
+        { student_id: 1, day: "2026-10-16", state: "absent", at_time: null });
+      eq(absRow.state, "absent", "صفّ الغياب يحمل absent كما هو");
+      eq(absRow.at_time, null, "وat_time null مقبول (عمود text — لا 23502)");
+      eq(s3.T.ATT_STATE_DB.absent, "absent", "و«absent» في خريطة العميل ⇒ لا تُقلَب إلى present");
+    }
   }
   {
     const { T } = makeSandbox();     /* وضع محلي */

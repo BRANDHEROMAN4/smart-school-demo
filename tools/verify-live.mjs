@@ -142,12 +142,25 @@ const whoami = async (tok) => {
   const n1 = await get("behaviour_notes",
     "select=id,student_id,category,kind,body,subject,noted_on,author_name,reply,replied_at,status,client_id&order=noted_on.desc", stu);
   chk(n1.status === 200 && n1.body.length >= 1, `التلميذة ترى ملاحظاتها (${(n1.body || []).length})`);
-  const open = (n1.body || []).find((n) => n.status === "open" && !n.reply);
-  chk(!!open, "توجد ملاحظة «قائم» بلا اعتراض ⇒ تُعرض «قائم» لا «قيد النظر»");
+  /* ملاحظةٌ «قائمة» بلا اعتراض **وفي مهلة الاعتراض**: الشرطان الأولان لا
+     يكفيان. `guard_note_update` على الخادم يردّ اعتراضًا على ملاحظة أقدم من
+     BEHAV_REPLY_DAYS (٧ أيام) بـ42501 ⇒ فاختيار ملاحظةٍ قديمة يُسقط ثلاث
+     تأكيدات **بلا أن يتغيّر سطرٌ في الكود**. ووقع فعلًا: خضراء في 2026-10-13،
+     وثلاثة إخفاقات في 2026-10-16 — لأنّ العمر مرّ لا لأنّ شيئًا انكسر.
+     (ولا تُزرع ملاحظة جديدة: `behaviour_notes` بلا سياسة حذف ⇒ تبقى أبدًا.) */
+  const REPLY_DAYS = 7;                    /* ≡ BEHAV_REPLY_DAYS و guard_note_update */
+  const inWindow = (n) =>
+    (Date.now() - new Date(n.noted_on + "T00:00:00Z").getTime()) <= REPLY_DAYS * 864e5;
+  const open = (n1.body || []).find((n) => n.status === "open" && !n.reply && inWindow(n));
   const nd = await get("behaviour_notes", "select=id&limit=1000", dir);
   chk(nd.body.length >= 8, `المديرة ترى ملاحظات المدرسة (${nd.body.length})`);
-  if (!open) {
-    console.log("\n\x1b[33m⚠️ لا ملاحظة مفتوحة بلا اعتراض — تُخطّى اختبارات الاعتراض.\x1b[0m");
+  /* وهذا ليس تأكيدًا على الكود بل على **حالة البيانات**: هل بَقِيت ملاحظةٌ
+     داخل المهلة؟ فحين تنقضي المهلة كلّها يصير «فشلًا» أبديًّا في حزمةٍ سليمة
+     — وهو أسوأ من التخطّي المُعلَن: يُدرّب على تجاهل الأحمر. */
+  if (open) {
+    ok("توجد ملاحظة «قائم» بلا اعتراض وفي مهلة الردّ ⇒ تُعرض «قائم» لا «قيد النظر»");
+  } else {
+    console.log("\n\x1b[33m⚠️ لا ملاحظة قائمة داخل مهلة الاعتراض — تُخطّى ④ و⑥ (المسار مغطّى محليًّا في rls.test.js).\x1b[0m");
   }
 
   /* ---------- ③ النقاط والحضور ---------- */
@@ -444,6 +457,29 @@ const whoami = async (tok) => {
       chk((seenAll.body || []).length === 0,
           "لكن لا تراه تلميذة واحدة ⇒ لهذا يُوسَّع «الكل» في العميل إلى صفٍّ لكل قسم",
           "لو ظهر هنا فسياسة القراءة تغيّرت — راجعي hw_read قبل تعديل العميل");
+
+      /* مسار الغياب (`markAbsent`) — يُقاس على **سياسة الإدراج وحدها**، وبلا
+         كتابة صفٍّ حقيقيّ. سببان:
+         ① `attendance` لها إدراجٌ وتحديثٌ و**لا سياسة حذف** ⇒ صفٌّ يُكتب هنا
+            يبقى أبدًا ويُفسد `absDays`/`attRate` تلميذةٍ حقيقية (كل الصفوف
+            تُحسب، لا صفّ اليوم وحده).
+         ② و`Prefer:return=representation` يجعل PostgreSQL يطبّق سياسة
+            **القراءة** على الصفّ المُعاد كذلك ⇒ قياسٌ به لا يدري أمِن
+            `attendance_write` جاء الرفض أم من `can_read_student`. وقد وقعنا
+            في هذا بعينه: المحاولة الأولى ردّت 42501 وبدت «السياسة ترفض
+            المعلّمة»، والسبب كان `can_read_student` على uuid غير موجود.
+         فـ`return=minimal` يعزل السؤال: 403 = السياسة ردّت · 409 = السياسة
+         مرّرت وسقط الإدراج على المفتاح الأجنبي. وهما لا يُلتبسان. */
+      const GHOST = "00000000-0000-0000-0000-000000000000";
+      const insMin = (row, tok) => fetch(`${URL_}/rest/v1/attendance`, {
+        method: "POST", headers: { ...H(tok), Prefer: "return=minimal" },
+        body: JSON.stringify(row),
+      });
+      const rT = await insMin({ student_id: GHOST, day: today, state: "absent", at_time: null }, tea);
+      chk(rT.status === 409,
+          "المعلّمة تملك can_record ⇒ كتابة الغياب تمرّ من السياسة (تسقط على المفتاح الأجنبي 409 لا 403)",
+          `HTTP ${rT.status} · ${JSON.stringify(rT.body).slice(0, 160)}`);
+      chk(rT.status !== 201, "ولم يُكتب صفّ ⇒ لا تلويثَ سجلّ تلميذة");
     } else {
       no("لا حساب معلّمة في roster.csv — تُخطّى واجبات ⑫");
     }

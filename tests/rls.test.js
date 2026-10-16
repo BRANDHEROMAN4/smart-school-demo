@@ -627,6 +627,17 @@ async function testStaff(db) {
                      [S.school, S.amina, "cid-att-1"]),
       "المعلّمة تسجّل الحضور (وبتكرار آمن: on conflict — جوهر إعادة إرسال الطابور)"
     );
+    /* ومسار الغياب الجديد (`markAbsent` في index.html): «absent» قيمةٌ في نوع
+       att_state لا استثناء، فيجب أن تمرّ بنفس السياسة. وهذا يثبّت الحدّ على
+       الخادم نفسه: الغياب مكتوبٌ كالحضور تمامًا لا بطريقٍ آخر. */
+    await allowed(
+      () => db.query(`insert into attendance (student_id,day,state,at_time,client_id)
+                      values ($1,current_date-3,'absent',null,$2)
+                      on conflict (student_id,day) do update
+                        set state=excluded.state, at_time=excluded.at_time, client_id=excluded.client_id`,
+                     [S.salma, "cid-abs-1"]),
+      "المعلّمة تسجّل غيابًا (absent) وat_time بلا قيمة — المسار الذي كان بلا كاتب"
+    );
     await allowed(
       () => db.query(`insert into behaviour_notes (school_id,student_id,category,kind,body,author_name)
                       values ($1,$2,'تعاون ومساعدة','pos','ساعدت زميلتها.',$3)`,

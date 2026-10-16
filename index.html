@@ -403,10 +403,10 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
       <div>
         <div class="panel">
           <h2>🩺 حالة النظام</h2>
-          <div class="row"><span>جهاز البوابة (المدخل)</span><span class="pill ok">متّصل</span></div>
-          <div class="row"><span>الشبكة المحلية LAN</span><span class="pill ok">متّصلة</span></div>
-          <div class="row"><span>الخادم المحلي</span><span class="pill ok">يعمل</span></div>
-          <div class="row"><span>قاعدة البيانات</span><span class="pill ok">سليمة</span></div>
+          <div class="row"><span>جهاز البوابة (المدخل)</span><span class="pill pend">غير موصول</span></div>
+          <div class="row"><span>الخادم السحابي (Supabase)</span><span class="pill pend" id="sysServer">—</span></div>
+          <div class="row"><span>مزامنة هذا الجهاز</span><span class="pill pend" id="sysSync">—</span></div>
+          <div class="row"><span>شبكة هذا الجهاز</span><span class="pill pend" id="sysNet">—</span></div>
           <div class="row"><span>النسخ الاحتياطي</span><span class="pill ok">اليوم 14:00</span></div>
         </div>
         <div class="panel">
@@ -821,8 +821,12 @@ function buildData(){
   });
   // أوقات الحاضرات: 07:40–08:12
   students.forEach(s=>{ if(s.state==="present"){const m=rand(40,72); s.time = m<60?`07:${pad(m)}`:`08:${pad(m-60)}`;}});
-  // النقاط والمعدلات والسلوك والحضور الفردي لكل تلميذة
+  // النقاط والمعدلات لكل تلميذة
   students.forEach(assignAcademics);
+  /* وبيان الوضع المحلي: السلوك ونسبة الحضور وأيام الغياب — تُملأ **هنا فقط**
+     (الوضع التجريبي بلا خادم). وفي الوضع الموصول تُشتقّ من الملاحظات وصفوف
+     الحضور، ولا تُختلق. */
+  students.forEach(s=>{ s.behavior=pick(BEHAVIORS); s.attRate=rand(88,99); s.absDays=rand(0,4); });
   // بعض البطاقات غير مرتبطة/مفقودة
   const shuffled=students.slice().sort(()=>Math.random()-0.5);
   shuffled.slice(0,14).forEach(s=>s.cardState="unlinked");
@@ -855,22 +859,48 @@ function stats(){
   const absent=students.filter(s=>s.state==="absent").length;
   const pending=students.filter(s=>s.state==="pending").length;
   const arrived=present+late;
-  const pct=Math.round(arrived/total*1000)/10;
-  return {total,present,late,absent,pending,arrived,pct};
+  /* النسبة تُقاس على ما **قُيِّد** فعلًا لا على كل التلميذات: قسمةُ الوافدات
+     على الإجمالي تجعل اللوحة تقول «٠٪» في الثامنة صباحًا، وهي كذبةٌ في
+     الاتجاه المعاكس. ومن لم يُسجَّل لا حكمَ له بعد ⇒ `null` لا صفر. */
+  const recorded=arrived+absent;
+  const pct=recorded?Math.round(arrived/recorded*1000)/10:null;
+  return {total,present,late,absent,pending,arrived,recorded,pct};
 }
+/** نسبةٌ لم تُقَس بعد لا تُعرَض «٠٪» — تُعرَض «—». */
+const pctTxt=p=>p==null?"—":p+"%";
 function pill(state){
   if(state==="present")return '<span class="pill ok">حاضرة</span>';
   if(state==="late")return '<span class="pill late">متأخّرة</span>';
   if(state==="absent")return '<span class="pill abs">غائبة</span>';
-  return '<span class="pill pend">لم تصل بعد</span>';
+  /* «لم تصل بعد» كانت تحكم بأنّها لم تحضر، ومن لم تُسجَّل قد تكون غائبة —
+     واللفظة الصادقة في كل الشاشات: لم يُقَيَّد لها شيء بعد. */
+  return '<span class="pill pend">لم تُسجَّل</span>';
 }
 
 /* ================= الرسوم البيانية ================= */
+/* سلسلة أيام الحضور المقروءة من الخادم — تُملأ في `hydrate` من صفوف
+   `attendance` نفسها. (كانت الأيام الأربعة الماضية أرقامًا مكتوبة في الكود
+   `[93.5,92.1,95.2,91.8]` تُعرَض كتاريخٍ حقيقيّ للمدرسة.) */
+let ATT_DAYS=[];
+/* بيان الوضع المحلي وحده: منحنى أسبوع مُصنَّع للعرض التجريبي. مفصولٌ في ثابتٍ
+   باسمه كي لا يبقى رقمٌ مُصنَّع داخل دالّة الرسم (فيُظنّ أنّه يُعرَض دائمًا). */
+const DEMO_WEEK=[93.5,92.1,95.2,91.8];
+function shortDay(iso){const p=String(iso).split("-");return p.length===3?p[2]+"/"+p[1]:"—";}
+/* منحنى الأسبوع: بنقطةٍ واحدة لا يُرسَم خطّ (‏`x` تساوي NaN) ⇒ رسمٌ مكسور.
+   فالرسالة الصادقة بدل الرسم الناقص. */
+function weekChartHTML(){
+  const d=weekData();
+  return d.length>=2 ? lineChart(d)
+    : '<div class="muted" style="padding:16px">لا سجلّ حضور كافٍ بعد لرسم المنحنى — يظهر بعد تسجيل يومين.</div>';
+}
 function weekData(){
   const s=stats();
-  const base=[93.5,92.1,95.2,91.8];
-  const days=WEEKDAYS.slice(0,4).map((d,i)=>({label:d,pct:base[i]}));
-  days.push({label:"اليوم",pct:s.pct});
+  const days=SYNC.mode==="remote"
+    ? ATT_DAYS.filter(d=>d.rec>0).slice(-4)
+        .map(d=>({label:shortDay(d.day),pct:Math.round(d.arr/d.rec*1000)/10}))
+    : WEEKDAYS.slice(0,4).map((d,i)=>({label:d,pct:DEMO_WEEK[i]}));
+  /* أيامٌ لم يُقَيَّد فيها شيء لا نسبةَ لها ⇒ لا تُرسَم نقطة كاذبة في المنحنى. */
+  if(s.pct!==null) days.push({label:"اليوم",pct:s.pct});
   return days;
 }
 function lineChart(data){
@@ -907,12 +937,26 @@ function gradeBars(){
    لم تُوصَل بمصدر. عرضُها بلا وسم **كذبٌ على المديرة**، وهو أسوأ من نقص ميزة.
    نُعلن كلًّا منها بما يخصّها (لا بعبارة عامّة) لأنّ الإعلان الغامض كالإخفاء. */
 const UNBACKED={
-  cards:    "حالات البطاقات (نشطة/مفقودة) لا تُقرأ من الخادم — الجميع يظهر «غير مرتبطة»",
+  cards:    "حالات البطاقات (نشطة/مفقودة) لا تُقرأ من الخادم — الجميع يظهر «نشطة»",
   timetable:"التوقيت نموذجيّ ثابت: لا يُقرأ من الخادم ولا يُحفظ فيه",
   calendar: "الأحداث تجريبية مولَّدة في المتصفّح، ولا مصدر لها على الخادم",
   parents:  "عمود «الحالة: مفعّل» وهميّ — لا حساب وليّ أمر على الخادم بعد",
   summons:  "لا يبلغ الاستدعاء وليّ الأمر عبر قناة حقيقية بعد (لا حساب وليّ أمر على الخادم)",
   gate:     "قارئ البطاقات محاكاة: سجلّ البوابة مولَّد، ولا جهاز حقيقيّ موصول",
+  /* ⚠️ جناحا المفتّش والسلطة كانا **بلا إعلان**: لوحتان لدورين لهما حسابان
+     حقيقيّان على الخادم (`inspector` · `authority` في roster.csv)، تُبنى كلّها
+     من `INSTS` — أربع مؤسسات بأعداد تلاميذ ونِسَب حضور ونجاح **مكتوبة في
+     الكود**، ومنها «إنذار مبكّر بالتسرّب». ولا مصدر لها على الخادم أصلًا:
+     لا بيانات عبر المؤسسات. فالإعلان هنا هو الحدّ الأدنى الصادق، حتى يُبنى
+     مصدرٌ حقيقيّ أو تُحذف الشاشات. */
+  ischome:  "بيانات المفتّش إرشادية مولَّدة (المؤسسات المُسنَدة وأرقامها مكتوبة في الكود) — لا مصدر لها على الخادم",
+  iscvisits:"سجلّ الزيارات محلّي: يُحفظ في هذا الجهاز وحده ولا يُزامَن",
+  isccheck: "قائمة التفقّد نموذج ثابت يُملأ محلّيًا — لا يُحفظ ولا يُزامَن",
+  iscnotes: "تعليمات المفتّش إرشادية مولَّدة — لا مصدر لها على الخادم",
+  obshome:  "المرصد التربوي إرشاديّ مولَّد (مؤسسات وأرقام مكتوبة في الكود) — لا مصدر له على الخادم",
+  obsdropout:"إنذار التسرّب المبكّر مبنيّ على الأرقام المولَّدة نفسها — لا مصدر له على الخادم",
+  obsmap:   "الخريطة إرشادية مولَّدة — لا مصدر لها على الخادم",
+  obsreports:"تقارير المرصد إرشادية مولَّدة — لا مصدر لها على الخادم",
 };
 function markUnbacked(){
   if(SYNC.mode!=="remote") return;
@@ -944,6 +988,19 @@ function markUnbacked(){
     sec.insertBefore(d,sec.firstElementChild);
   }
 }
+/* لوحة «حالة النظام» كانت ثلاثة صفوف **مكتوبة في القالب**: «الشبكة المحلية
+   متّصلة» و«الخادم المحلي يعمل» و«قاعدة البيانات سليمة» — تُعرَض للمديرة في
+   كل الحالات، حتّى بلا خادم أصلًا. وهذه حالاتٌ نعرفها فعلًا (`SYNC.mode`
+   و`SYNC.online`)، فلا معنى لادّعائها. */
+function renderSystemStatus(){
+  const set=(id,txt,cls)=>{const e=document.getElementById(id);if(!e)return;
+    e.textContent=txt;e.className="pill "+(cls||"");};
+  const remote=SYNC.mode==="remote";
+  set("sysServer", remote?"موصول":"غير موصول", remote?"ok":"pend");
+  set("sysSync", remote?(SYNC.online?"تعمل":"متوقّفة (بلا شبكة)"):"لا مزامنة (وضع محلي)",
+      remote?(SYNC.online?"ok":"late"):"pend");
+  set("sysNet", SYNC.online?"متّصلة":"منقطعة", SYNC.online?"ok":"abs");
+}
 function render(){
   const s=stats();
   // KPI dashboard
@@ -951,13 +1008,13 @@ function render(){
     ${kpiCard("إجمالي التلميذات","🎒",s.total,"")}
     ${kpiCard("حاضرات اليوم","✅",s.arrived,"green")}
     ${kpiCard("غائبات","🚫",s.absent,"red")}
-    ${kpiCard("نسبة الحضور","📈",s.pct+"%","blue")}
+    ${kpiCard("نسبة الحضور","📈",pctTxt(s.pct),"blue")}
     ${kpiCard("متأخّرات","⏰",s.late,"amber")}
-    ${kpiCard("لم تصل بعد","⏳",s.pending,"")}`;
+    ${kpiCard("لم تُسجَّل","⏳",s.pending,"")}`;
   // Feed
   document.getElementById("feed").innerHTML=gateLog.slice(0,6).map(g=>
     `<tr><td>${g.name}</td><td>${g.cls}</td><td>${ltr(g.time)}</td><td>${g.late?'<span class="pill late">متأخّرة</span>':'<span class="pill ok">حاضرة</span>'}</td></tr>`).join("");
-  document.getElementById("weekChart").innerHTML=lineChart(weekData());
+  document.getElementById("weekChart").innerHTML=weekChartHTML();
   document.getElementById("gradeBars").innerHTML=gradeBars();
 
   // Students
@@ -997,11 +1054,13 @@ function render(){
     return `<tr><td>${k}</td><td>${arr.length}</td><td>${a}</td><td>${ab}</td><td>${Math.round(a/arr.length*100)}%</td></tr>`;}).join("");
   const pend=students.filter(x=>x.state==="pending");
   document.getElementById("pendingList").innerHTML=pend.length?pend.map(st=>
-    `<div class="notice" style="display:flex;justify-content:space-between;align-items:center"><span>${st.name} · ${st.cls}</span><button class="btn primary" style="padding:6px 12px" onclick="markPresent(${st.id})">تحضير</button></div>`).join("")
+    `<div class="notice" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${st.name} · ${st.cls}</span><span style="display:flex;gap:6px"><button class="btn primary" style="padding:6px 12px" onclick="markPresent(${st.id})">تحضير</button><button class="btn" style="padding:6px 12px" onclick="markAbsent(${st.id})">غائبة</button></span></div>`).join("")
     :'<div class="notice g">تمّ تسجيل جميع التلميذات ✅</div>';
 
   // Gate
-  document.getElementById("gateKpi").innerHTML=`${kpiCard("الجهاز","🟢","متّصل","green")}${kpiCard("دخلن اليوم","🚪",s.arrived,"")}${kpiCard("آخر عملية","🕐",gateLog[0]?gateLog[0].time:"—","")}${kpiCard("متأخّرات","⏰",s.late,"amber")}`;
+  /* «متّصل» كانت مكتوبة حرفيًّا وما ثمّ جهاز — تناقضٌ مع إعلان UNBACKED.gate
+     فوقها. هذا موضع حالة الجهاز حين يُوصَل فعلًا. */
+  document.getElementById("gateKpi").innerHTML=`${kpiCard("الجهاز","⚪","غير موصول","")}${kpiCard("دخلن اليوم","🚪",s.arrived,"")}${kpiCard("آخر عملية","🕐",gateLog[0]?gateLog[0].time:"—","")}${kpiCard("متأخّرات","⏰",s.late,"amber")}`;
   document.getElementById("gateLog").innerHTML=gateLog.slice(0,14).map(g=>
     `<div class="notice ${g.late?'y':'g'}">${ltr(g.time)} · ${g.name} · ${g.cls} · ${g.late?'⏰ دخول متأخّر':'🟢 دخول ناجح'}</div>`).join("");
 
@@ -1011,10 +1070,11 @@ function render(){
 
   // Notifications
   renderNotifs();
+  renderSystemStatus();
 
   // Stats
-  document.getElementById("statKpi").innerHTML=`${kpiCard("متوسط الحضور","📈",s.pct+"%","blue")}${kpiCard("أفضل قسم","🏆",bestClass(classes),"green")}${kpiCard("الأكثر غيابًا","📉",worstClass(classes),"red")}${kpiCard("إجمالي الإشعارات","🔔",notifs.length,"")}`;
-  document.getElementById("weekChart2").innerHTML=lineChart(weekData());
+  document.getElementById("statKpi").innerHTML=`${kpiCard("متوسط الحضور","📈",pctTxt(s.pct),"blue")}${kpiCard("أفضل قسم","🏆",bestClass(classes),"green")}${kpiCard("الأكثر غيابًا","📉",worstClass(classes),"red")}${kpiCard("إجمالي الإشعارات","🔔",notifs.length,"")}`;
+  document.getElementById("weekChart2").innerHTML=weekChartHTML();
   document.getElementById("gradeBars2").innerHTML=gradeBars();
 
   // Reports preview
@@ -1026,7 +1086,7 @@ function render(){
     <tr><td>حاضرات</td><td>${s.present}</td></tr>
     <tr><td>متأخّرات</td><td>${s.late}</td></tr>
     <tr><td>غائبات</td><td>${s.absent}</td></tr>
-    <tr><td>نسبة الحضور</td><td>${s.pct}%</td></tr>
+    <tr><td>نسبة الحضور</td><td>${pctTxt(s.pct)}</td></tr>
     </tbody></table>`;
 
   // Settings
@@ -1135,6 +1195,21 @@ function markPresent(id){
     }));
   render();toast("تحضير يدوي ✅",`${st.name} · ${st.cls}`,"g");
 }
+/* الغياب — الكاتب الناقص. كان لا سبيل في الواجهة لتسجيله، وعلى خادم حقيقيّ
+   لا تُكتب إلّا صفوف `present` ⇒ غيابٌ واحد لا يقع أبدًا، و`sendAbsenceAlerts`
+   (وهو موجود ويقرأ `state==="absent"`) لا يجد ما يُبلّغ عنه.
+   وحدّ الدور كحدّ التحضير: `attendance_write` تشترط `can_record`، و`42501`
+   ليس في PERMANENT_FAIL ⇒ إرسالٌ من الأمانة = ثماني محاولات ثم إنذار لا يُفهَم. */
+function markAbsent(id){
+  const st=students.find(s=>s.id===id); if(!st) return;
+  st.state="absent"; st.time=null;
+  /* الغياب **ليس عبورًا**: لا نكتب `gate_log` — سجلّ البوابة يقول ما وقع،
+     ومن لم تعبر لم يقع منها عبورٌ يُسجَّل. */
+  notifs.unshift({time:nowHM(),type:"absence",text:`تسجيل غياب: ${st.name} (${st.cls}).`});
+  if(canRecord(currentRole))
+    enqueue("attendance", rowFor("attendance",{student_id:id, day:todayISO(), state:"absent", at_time:null}));
+  render();toast("سُجّل الغياب 🚫",`${st.name} · ${st.cls}`,"a");
+}
 /* ===== القنوات المتعددة — درس: القناة الواحدة تفشل دائمًا (Wilma الفنلدي) =====
    لا نراهن على تطبيق واحد يصل كل عائلة: تطبيق + SMS + اتصال هاتفي. */
 const CHANNELS=[
@@ -1206,7 +1281,7 @@ function addStudent(){
   const g=+document.getElementById("ns_grade").value, sec=document.getElementById("ns_sec").value;
   const phone=(document.getElementById("ns_phone").value||"").replace(/[^0-9]/g,"")||genPhone();
   const name=esc(raw)||("تلميذة جديدة "+nextId);
-  const st={id:nextId++,name,grade:g,sec,cls:g+sec,card:"RF-00"+(nextCard++),parent:"وليّ "+(raw||name),phone,notify:"SMS",state:"present",time:nowHM(),cardState:"active"};
+  const st={id:nextId++,name,grade:g,sec,cls:g+sec,card:"RF-00"+(nextCard++),parent:"وليّ "+(raw||name),phone,notify:"SMS",state:"pending",time:null,cardState:"active"};
   assignAcademics(st); students.push(st);
   /* الإنشاء يذهب إلى الطابور أيضًا — وإلّا صارت التلميذة الجديدة جزيرةً:
      لا تصل إليها ملاحظة، ولا يتذكّرها أحد بعد إغلاق المتصفّح.
@@ -1402,7 +1477,14 @@ function assignAcademics(s){
     let sum=0,co=0;SUBJECTS.forEach(sub=>{sum+=m[sub.n]*sub.c;co+=sub.c;});
     s.avg.push(Math.round(sum/co*100)/100);
   }
-  s.behavior=pick(BEHAVIORS); s.attRate=rand(88,99); s.absDays=rand(0,4);
+  /* ⚠️ هنا كان يُختلق **حكمٌ على سلوك التلميذة** (سحبٌ عشوائي من مصفوفة
+     التقديرات) ونسبةُ حضور عشوائية وعددُ أيام غياب — وتُعرَض كأنّها مقروءة من
+     الخادم: في لوحة التلميذة («نسبة حضوري · تقديري السلوكي») وفي شاشة
+     «المعرّضون للخطر». والحقيقة أنّ الخادم يحمل الاثنين: النسبة تُحسَب من
+     صفوف `attendance`، والتقدير يُشتقّ من الملاحظات. فلا يُختلق شيء هنا.
+     (الوضع المحلي وحده يملأها في `buildData` — بيانٌ تجريبيّ مُعلَن.)
+     والنقاط تبقى مولَّدة هنا لأنّها **مُعلَنة**: `marksMissing()` تسمّي الموادّ
+     التي لم تصل من الخادم وتقول «تقدير محلّي». */
 }
 function classesSorted(){return [...new Set(students.map(s=>s.cls))].sort();}
 function markClass(v){return v>=7?"m-good":v>=5?"m-ok":"m-low";}
@@ -1689,7 +1771,7 @@ function openProfile(id){
         <button class="btn primary" style="margin-top:8px;width:100%" onclick="notifyParent(${st.id})">📩 إشعار الوليّ</button>
       </div>
       <div class="pcard"><h4>🗓️ الحضور</h4>
-        <div class="big blue">${st.attRate}%</div>
+        <div class="big blue">${pctTxt(st.attRate)}</div>
         <div class="muted">نسبة الحضور هذا الشهر</div>
         <div class="row" style="margin-top:8px"><span>أيام الغياب</span><b>${st.absDays}</b></div>
       </div>
@@ -1876,6 +1958,16 @@ let NOTES=[
 ];
 function behavCat(l){return BEHAV_CATS.find(c=>c.label===l)||{k:"pos",label:l};}
 function noteKind(n){return (n.kind==="neg"||n.kind==="warn")?"neg":"pos";}
+/* التقدير السلوكي **يُشتقّ** من ملاحظات التلميذة نفسها لحظة العرض — لا
+   يُختلق ولا يُخزَّن. (التخزين يتقادم بعد أوّل ملاحظة جديدة، وهو نفس الدرس
+   الذي جعل «تقدير محلّي» تُشتقّ بـ`marksMissing()` بدل أن تُحفَظ.) */
+function behavVerdictOf(st){
+  const act=NOTES.filter(n=>n.sid===st.id&&n.status!=="مؤرشف");
+  if(!act.length) return "لا ملاحظات مسجّلة بعد";
+  const neg=act.filter(n=>noteKind(n)==="neg").length, pos=act.length-neg;
+  if(neg===0) return "ممتاز";
+  return pos>=neg?"حسن":"يحتاج متابعة";
+}
 function daysSince(d){const t=Date.parse(d);return isNaN(t)?0:Math.floor((Date.now()-t)/864e5);}
 function behavBalance(){const act=NOTES.filter(n=>n.status!=="مؤرشف");const pos=act.filter(n=>noteKind(n)==="pos").length;return {pos,neg:act.length-pos,total:act.length};}
 function applyRetention(){let c=0;const cut=new Date(Date.now()-BEHAV_RETENTION_DAYS*864e5).toISOString().slice(0,10);
@@ -1977,7 +2069,7 @@ function renderStudentWing(){
   document.getElementById("shome").innerHTML=`
     <div class="hero"><div class="htxt"><b>مرحبًا ${st.name} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${st.cls} · هذه مساحتك الخاصة في EDUVIA</p></div></div>
     <div class="cards" style="grid-template-columns:repeat(4,1fr)">
-      ${kpiCard("نسبة حضوري","🗓️",st.attRate+"%","green")}
+      ${kpiCard("نسبة حضوري","🗓️",pctTxt(st.attRate),"green")}
       ${kpiCard("معدّلي العام","🎯",st.avg[0]+" /10","blue")}
       ${kpiCard("رتبتي في القسم","🏅",r.rank+" / "+r.total,"")}
       ${kpiCard("أيام غيابي","🚫",st.absDays,"red")}
@@ -1992,10 +2084,10 @@ function renderStudentWing(){
     <div class="cards" style="grid-template-columns:repeat(3,1fr)">${kpiCard("معدّلي","🎯",st.avg[0]+" /10","blue")}${kpiCard("رتبتي","🏅",r.rank+" / "+r.total,"")}${kpiCard("التقدير","⭐",appreciation(st.avg[0]),"")}</div>
     <table><thead><tr><th>المادة</th><th>المعامل</th><th>نقطتي /10</th></tr></thead><tbody>${SUBJECTS.map(s=>`<tr><td>${s.n}</td><td>${s.c}</td><td class="${markClass(st.marks[0][s.n])}"><b>${st.marks[0][s.n]}</b></td></tr>`).join("")}</tbody></table>
     ${smiss.length?`<div class="notice y" style="margin-top:10px">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${smiss.map(esc).join(" · ")}</div>`:""}</div>`;
-  const stt=st.state==="absent"?'<span class="pill abs">غائبة</span>':st.state==="late"?'<span class="pill late">متأخّرة</span>':'<span class="pill ok">حاضرة</span>';
+  const stt=pill(st.state);
   document.getElementById("sattendance").innerHTML=`
     <div class="panel"><h2>🗓️ حضوري</h2>
-    <div class="cards" style="grid-template-columns:repeat(3,1fr)">${kpiCard("نسبة حضوري","✅",st.attRate+"%","green")}${kpiCard("أيام غيابي","🚫",st.absDays,"red")}${kpiCard("حالة اليوم","🕐",st.time?st.time:"—","")}</div>
+    <div class="cards" style="grid-template-columns:repeat(3,1fr)">${kpiCard("نسبة حضوري","✅",pctTxt(st.attRate),"green")}${kpiCard("أيام غيابي","🚫",st.absDays,"red")}${kpiCard("حالة اليوم","🕐",st.time?st.time:"—","")}</div>
     <div class="notice b">حالتي اليوم: ${stt} ${st.time?"· "+ltr(st.time):""}</div>
     <div class="muted">سجلّ حضورك محفوظ ويطّلع عليه وليّ أمرك والإدارة.</div></div>`;
   let tt="<thead><tr><th class='t-per'></th>"+TT_DAYS.map(d=>`<th>${d}</th>`).join("")+"</tr></thead><tbody>"+TT.map(row=>`<tr><td class="t-per">${ltr(row[0])}</td>`+row[1].map(sub=>sub==="—"?`<td class="t-off">—</td>`:`<td class="${SUBCLASS[sub]||''}">${sub}</td>`).join("")+"</tr>").join("")+"</tbody>";
@@ -2003,7 +2095,7 @@ function renderStudentWing(){
   document.getElementById("swork").innerHTML=`<div class="panel"><h2>📚 واجباتي المنزلية</h2>${HOMEWORK.filter(h=>h.cls===st.cls||h.cls==="الكل").map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(h.subj)}</b><span class="pill late">📅 ${esc(h.due)}</span></div><div style="margin-top:5px;font-size:13px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات حاليًا.</div>'}<div class="muted" style="margin-top:8px">لا تنسَ إنجاز واجباتك قبل موعدها 📖</div></div>`;
   const _nb=behavBalance();
   document.getElementById("snotes").innerHTML=`<div class="panel"><h2>📌 ملاحظاتي والسلوك</h2>
-    <div class="notice g">تقديري السلوكي العام: <b>${esc(st.behavior)}</b></div>
+    <div class="notice g">تقديري السلوكي العام: <b>${esc(behavVerdictOf(st))}</b></div>
     <div class="notice b" style="font-size:12.5px"><b>حقوقك مضمونة:</b> سجلّ السلوك <b>متوازن</b> (إيجابي/سلبي)، ولك <b>حقّ الاعتراض</b> على أي ملاحظة خلال ${BEHAV_REPLY_DAYS} أيام، ولا تُحفظ الملاحظات إلا <b>${BEHAV_RETENTION_DAYS} يومًا</b> ثم تُؤرشف.</div>
     <div class="muted" style="margin:4px 0 6px">توازن سجلّك: ${_nb.pos} إيجابي · ${_nb.neg} سلبي</div>
     ${NOTES.filter(n=>n.sid===st.id).map(n=>noteCard(n,"student")).join("")||'<div class="muted">لا ملاحظات مسجّلة عليك. 🌱</div>'}</div>`;
@@ -2471,9 +2563,13 @@ function rowFor(table,o){
 
     case "attendance":{
       const sid=sidOrNull(o.student_id); if(sid===false) return null;
+      /* لا قيمة افتراضية. `||"present"` كانت تُحوِّل أيّ قيمةٍ غير معروفة
+         (عربيةً مثل «غائبة» — والقاعدة تعرف `absent` وحدها) إلى «حاضرة»
+         **بصمت** ⇒ تُقيَّد التلميذة الغائبة حاضرةً ولا رفض يُنبّه. والقيمة
+         المجهولة تُسقَط كما تُسقَط التلميذة المجهولة: لا تُخترع. */
+      const state=ATT_STATE_DB[o.state]; if(!state) return null;
       return {student_id:sid, day:o.day,
-              state:ATT_STATE_DB[o.state]||"present",
-              at_time:o.at_time==null?null:o.at_time, client_id:o.client_id};
+              state, at_time:o.at_time==null?null:o.at_time, client_id:o.client_id};
     }
 
     /* النقاط — **أوّل كتابة لها** (كانت تُقرأ ولا تُكتب).
@@ -2801,6 +2897,16 @@ async function hydrate(){
     if(sRows===null) return {ok:false,reason:"students-failed",errs};
 
     /* ---------- ① التلاميذ — الهوية الحقيقية ---------- */
+    /* لا ندهس معلّقًا (مبدأ ② في رأس الدالّة) — والحضور كان يخالفه: مصفوفة
+       `students` تُبنى من الصفر، فغيابٌ سجّلته المعلّمة بلا شبكة يرتدّ
+       «لم تُسجَّل» أمام عينيها لحظة عودة الجرس، ثم يصل الطابور بعدها.
+       فنُمسك الحالة المحلّية قبل الاستبدال، ونُعيدها بعده.
+       والمفتاح هو الـuuid لأنّ `rowFor` يمرّر student_id على `sidOrNull`
+       ⇒ ما في الطابور uuid لا رقمٌ محلّي. */
+    const pendAtt=new Set();
+    QUEUE.forEach(i=>{ if(i.table==="attendance"&&i.row) pendAtt.add(i.row.student_id); });
+    const heldState=new Map();
+    students.forEach(s=>{ if(s.cloudId&&pendAtt.has(s.cloudId)) heldState.set(s.cloudId,{state:s.state,time:s.time}); });
     if(sRows.length){
       students=sRows.slice()
         .sort((a,b)=>String(a.card_no).localeCompare(String(b.card_no)))
@@ -2811,8 +2917,17 @@ async function hydrate(){
           parent:r.parent_name||"وليّ الأمر",
           phone:r.parent_phone||"",
           notify:r.notify_pref==="app"?"تطبيق":"SMS",
-          state:"present", time:null, cardState:"active", source:"server"
+          state:"pending", time:null, cardState:"active", source:"server",
+          /* لا يُختلق حكمٌ على التلميذة: السلوك يُشتقّ من الملاحظات لحظة العرض،
+             والنسبة/الغياب يُحسَبان من صفوف `attendance` أدناه — وإن لم تكن
+             هناك صفوف بقيتا `null` فتُعرَض «—» لا رقمٌ مُلفَّق. */
+          behavior:null, attRate:null, absDays:0
         }));
+      /* إعادة الحالة المحلّية المعلَّقة فوق الافتراضي الصادق («لم تُسجَّل»). */
+      students.forEach(s=>{
+        const h=s.cloudId?heldState.get(s.cloudId):null;
+        if(h){ s.state=h.state; s.time=h.time; }
+      });
       /* هيكل مؤقّت حتى تصل الأرقام الحقيقية من grades/attendance أدناه. */
       students.forEach(assignAcademics);
       /* ⚠️ قبل المسح: نُنجي التقييمات التي **أدخلتها المعلّمة** ولم تصل الخادم
@@ -2863,6 +2978,18 @@ async function hydrate(){
        تحذيرٌ معلَّقًا على مادةٍ صارت موثّقة بعد أن أُدخلت نقطتها. */
 
     /* ---------- ③ الحضور — ونُشتقّ منه سجلّ البوابة ---------- */
+    if(aRows){
+      /* سلسلة الأيام لمنحنى الأسبوع — من الصفوف نفسها لا من أرقام مكتوبة.
+         والمقام «المُسجَّلات» كما في `stats()`: من لم يُقَيَّد لا يُحسَب. */
+      const byDay={};
+      aRows.forEach(a=>{
+        const d=String(a.day).slice(0,10), b=byDay[d]=byDay[d]||{arr:0,rec:0};
+        const arrived=(a.state==="present"||a.state==="late");
+        if(arrived) b.arr++;
+        if(arrived||a.state==="absent") b.rec++;
+      });
+      ATT_DAYS=Object.keys(byDay).sort().map(d=>({day:d,arr:byDay[d].arr,rec:byDay[d].rec}));
+    }
     if(aRows&&aRows.length){
       const byS={};
       aRows.forEach(a=>{ (byS[a.student_id]=byS[a.student_id]||[]).push(a); });
@@ -2872,7 +2999,9 @@ async function hydrate(){
         s.absDays=rows.filter(r=>r.state==="absent").length;
         s.attRate=Math.round(arr/rows.length*100);
         const t=rows.find(r=>String(r.day).slice(0,10)===todayISO());
-        if(t){ s.state=t.state; s.time=t.at_time; s.source="server"; }
+        /* ومع ذلك لا ندهس معلّقًا: لو كان في الطابور صفُّ اليوم نفسه لم يصل
+           بعد، فالمحلّي أصدق — لا نُعيده إلى قيمة الخادم القديمة. */
+        if(t&&!pendAtt.has(s.cloudId)){ s.state=t.state; s.time=t.at_time; s.source="server"; }
       });
       gateLog=students.filter(s=>s.time)
         .map(s=>({time:s.time,name:s.name,cls:s.cls,late:s.state==="late"}))
