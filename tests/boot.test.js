@@ -138,7 +138,13 @@ const chk = (label, fn) => { try { fn() ? ok(label) : bad(label); } catch (e) { 
 chk("التلاميذ وُلدوا من buildData()", () => T.students.length > 0);
 chk("الأقسام مبنيّة", () => T.classesSorted().length > 0);
 chk("المعلّمون موجودون", () => T.teachers.length > 0);
-chk("الأدوار السبعة معرَّفة", () => Object.keys(T.ROLES).length === 7);
+/* ثمانية: مدير · معلّمة · ناظر · أمانة · مفتّش · وصاية · تلميذة · **وليّ أمر**.
+   والعدّ مقصود: دورٌ يُضاف بلا شاشةٍ تُوجَّهه يسقط على ROLES.student في
+   applyRole ⇒ شاشةٌ مكسورة لصاحب حسابٍ حقيقيّ على الخادم. */
+chk("الأدوار الثمانية معرَّفة", () => Object.keys(T.ROLES).length === 8);
+chk("ودور وليّ الأمر له شاشته الخاصة", () =>
+  Array.isArray(T.ROLES.parent && T.ROLES.parent.pages) &&
+  T.ROLES.parent.pages.every((p) => /^p[a-z]+$/.test(p)));
 chk("الطابور أُقلع فارغًا", () => Array.isArray(T.QUEUE) && T.QUEUE.length === 0);
 chk("وضع المزامنة مُشتقّ من الإعداد لا مثبَّت", () =>
   derivedMode === ((T.EDUVIA_CONFIG.supabaseUrl && T.EDUVIA_CONFIG.supabaseAnonKey) ? "remote" : "local"));

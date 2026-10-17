@@ -136,7 +136,10 @@ async function main() {
   await db.query(read("tests/supabase-shim.sql"));
   await db.query(read("sql/001_schema.sql"));
   await db.query(read("sql/002_rls.sql"));
-  ok("شُغِّل shim + 001_schema + 002_rls بلا أخطاء");
+  /* يُشغَّل هنا **كما يُشغّله المستخدم**: ملفًّا كاملًا في محرّر SQL. فلو صار
+     غير قابل للتشغيل على قاعدة حقيقية لسقط الاختبار — لا بعده على الخادم. */
+  await db.query(read("sql/007_guardians_subscription.sql"));
+  ok("شُغِّل shim + 001_schema + 002_rls + 007_subscription بلا أخطاء");
 
   // منح صلاحيات الجداول (Supabase يمنحها افتراضيًا)
   await db.query(
@@ -708,6 +711,25 @@ async function testStaff(db) {
 }
 
 async function testParent(db) {
+  /* نُثري القياس قبل أن نقيس: صفٌّ في سجلّ البوابة، وإشعاران لتلميذتين
+     مختلفتين، ودفعة اشتراك. وبدونها كان «الولي يرى صفرًا» **صفرًا في صفر** —
+     فحصٌ لا يقيس شيئًا ويمرّ دائمًا. */
+  await as(db, S.uDirector, async () => {
+    await db.query(`insert into gate_log (school_id, student_id, at_time, day, late)
+                    values ($1,$2,'08:10',current_date,false)`, [S.school, S.amina]);
+    await db.query(`insert into notifications (school_id, student_id, kind, body, at_time)
+                    values ($1,$2,'absence','لم تحضر ابنتكم اليوم','08:30'),
+                           ($1,$3,'absence','لم تحضر ابنتكم اليوم','08:30')`,
+                   [S.school, S.amina, S.salma]);
+    await allowed(
+      () => db.query(`insert into guardians_subscription (profile_id, paid_until, amount_dzd, receipt_no)
+                      values ($1, date '2027-06-30', 3000, 'وصل-001')`, [S.uParent]),
+      "المدير يُسجّل دفعة اشتراك لوليّ مؤسسته"
+    );
+  });
+  eq(await count(db, `select count(*)::int n from gate_log`), 1,
+     "سجلّ البوابة فيه صفّ فعلًا (وإلّا كان القياس على الولي صفرًا في صفر)");
+
   await as(db, S.uParent, async () => {
     eq(await count(db, `select count(*)::int n from students`), 1,
        "الولي يرى سجلّ ابنته فقط");
@@ -716,6 +738,39 @@ async function testParent(db) {
     await denied(
       () => db.query(`update behaviour_notes set status='revoked' where id='44444444-4444-4444-4444-444444444402'`),
       "الولي لا يُلغي ملاحظة بنفسه"
+    );
+
+    /* سجلّ البوابة ليس من شأنه — والعميل يقصر قائمة الجلب على الدور فلا
+       يطلبه أصلًا. لكن هذا يقيس **السياسة**: لو نُسي القصر كان الخادم حاجزًا.
+       والقياس بالعدّ لا بالرفض: RLS على SELECT تُصفّر الصفوف ولا تُخطئ. */
+    eq(await count(db, `select count(*)::int n from gate_log`), 0,
+       "الولي لا يرى شيئًا من سجلّ البوابة");
+
+    /* الإشعارات — **قناة وليّ الأمر الوحيدة التي تصل بلا مزوّد SMS**،
+       فلو لم تُفتح له لَما وصلَه غياب ابنته أبدًا. */
+    eq(await count(db, `select count(*)::int n from notifications`), 1,
+       "الولي يقرأ إشعار ابنتها وحدها (إشعار التلميذة الأخرى محجوب)");
+
+    /* الاشتراك: يقرأ سجلّه — ولا يمدّده بيده. */
+    eq(await count(db, `select count(*)::int n from guardians_subscription`), 1,
+       "الولي يقرأ سجلّ اشتراكه");
+    await denied(
+      () => db.query(`insert into guardians_subscription (profile_id, paid_until)
+                      values ($1, date '2099-01-01')`, [S.uParent]),
+      "الولي لا يُنشئ لنفسه اشتراكًا"
+    );
+    await noWrite(
+      () => db.query(`update guardians_subscription set paid_until = date '2099-01-01'`),
+      "ولا يُمدّد مهلته بنفسه"
+    );
+  });
+
+  /* ولا يُكتب سجلّ اشتراكٍ لحسابٍ ليس وليَّ أمر. */
+  await as(db, S.uDirector, async () => {
+    await denied(
+      () => db.query(`insert into guardians_subscription (profile_id, paid_until)
+                      values ($1, date '2027-06-30')`, [S.uAmina]),
+      "ولا يُسجَّل اشتراكٌ لحساب تلميذة (السياسة تشترط role='parent')"
     );
   });
 }

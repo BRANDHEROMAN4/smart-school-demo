@@ -516,6 +516,128 @@ function main() {
       "وتلميذةٌ تُضاف الآن تبدأ «لم تُسجَّل» لا «حاضرة»");
   }
 
+  /* ------------------------- ⑫ وليّ الأمر: رقمٌ موحَّد، وابنته، وقناةٌ تكتب -------------
+     ثلاث دعاوى كانت قائمة، كلّها بلا إثبات على الخادم:
+      ① **رقم الهاتف**: `toEmail` تقلب كل ما ليس `[a-z0-9._-]` إلى شرطة ⇒
+         `0555123456` و`+213555123456` ثلاثةُ حسابات، واحدٌ منها موجود.
+         الأمّ تكتب رقمها بطريقتها فتُمنع، والحساب قائم.
+      ② **دور `parent` غير موجود في ROLES** ⇒ `applyRole` تسقط على
+         `ROLES.student`، و`meStudent` تبقى null ⇒ شاشة مكسورة لا رسالة.
+      ③ **قناة «إشعار التطبيق»**: `sendAbsenceAlerts` تُعلن الإشعار وتكتبه في
+         `notifs` المحلّية وحدها ⇒ وليُّ الأمر لا يعلم بغياب ابنته أبدًا،
+         وهي **القناة الوحيدة التي تصل بلا مزوّد SMS**. */
+  console.log("\n▸ وليّ الأمر: رقمٌ موهّد، ودورٌ له شاشة، وقناةٌ تكتب فعلًا");
+  {
+    const PROV = fs.readFileSync(path.join(ROOT, "tools/provision.mjs"), "utf8");
+    const fn = (name) => {
+      const i = HTML.indexOf(`function ${name}(`);
+      if (i < 0) return null;
+      const j = HTML.indexOf("\n}", i);
+      return j < 0 ? HTML.slice(i) : HTML.slice(i, j);
+    };
+
+    /* ① canonPhone — تُقاس سلوكًا لا وصفًا. */
+    const canonFn = (src) => {
+      const i = src.indexOf("function canonPhone(v){");
+      if (i < 0) return null;
+      const j = src.indexOf("\n}", i);
+      if (j < 0) return null;
+      try { return { fn: eval("(" + src.slice(i, j + 2) + ")"), text: src.slice(i, j + 2).replace(/\s+/g, " ").trim() }; }
+      catch (e) { return null; }
+    };
+    const A = canonFn(HTML), B = canonFn(PROV);
+    chk(!!A, "canonPhone معرَّفة في index.html");
+    chk(!!B, "canonPhone معرَّفة في tools/provision.mjs");
+    if (A && B) {
+      chk(A.text === B.text,
+        "النسختان متطابقتان نصًّا — وإلّا وُهِّد الرقمُ عند الإنشاء ولم يُوهَّد عند الدخول، فيُمنع صاحبه");
+      chk(["0555123456", "+213555123456", "00213555123456", "213555123456",
+           "0555 12 34 56", "555123456"].every((x) => A.fn(x) === "0555123456"),
+        "وكلّ كتابات الرقم الواحد تصير 0555123456 (+213 · 00213 · مسافات · بلا صفر)");
+      chk(["RF-0001", "director", "333333", "RF-T001"].every((x) => A.fn(x) === x),
+        "ولا تمسّ معرّفاتٍ غير هاتفية — وإلّا مُنعت التلميذات والطاقم من الدخول");
+      chk(/canonPhone\(/.test(HTML.slice(HTML.indexOf("const toEmail"))) ||
+          /toEmail=loginId=>canonPhone/.test(HTML),
+        "و`toEmail` تمرّ على canonPhone (التوصيل الفعليّ لا التعريف وحده)");
+      chk(/canonPhone\(loginId\)/.test(PROV), "وكذلك نسخة الإنشاء في provision.mjs");
+    }
+
+    /* ② دور الوالد: شاشةٌ له، ولا صفحة إدارية تتسرّب إليه. */
+    chk(/parent:\{label:"وليّ الأمر"/.test(HTML), "ROLES فيه مدخل parent");
+    const pm = /parent:\{[^}]*pages:\[([^\]]*)\]/.exec(HTML);
+    const ppages = pm ? pm[1].split(",").map((s) => s.replace(/["\s]/g, "")) : [];
+    chk(ppages.length >= 6, `لوليّ الأمر صفحاتٌ خاصّة (${ppages.length})`);
+    chk(ppages.length > 0 && ppages.every((p) => /^p[a-z]+$/.test(p)),
+      "وكلّ صفحاته تبدأ بـp — فلا dashboard ولا students ولا settings");
+    chk(ppages.every((p) => HTML.includes(`<section id="${p}"`)),
+      "ولكلّ صفحة قسمٌ في الملف (وإلّا كتب الجناح في عنصرٍ غير موجود فرمى)");
+    chk(/function\s+renderParentWing\s*\(/.test(HTML) && countWord("renderParentWing") >= 2,
+      "renderParentWing معرَّفة **ومُناداة** (تعريفٌ بلا نداء لا يُظهر شيئًا)");
+    chk(/if\(k==="parent"\)\{/.test(HTML), "وapplyRole تُوجّه دور parent إلى جناحه");
+    chk(/r\.role==="student"\|\|r\.role==="parent"/.test(HTML),
+      "وdoLogin تُعرِّف meStudent للوليّ أيضًا (وإلّا بقيت الشاشة فارغة)");
+    chk(/function\s+unlinkedHTML\s*\(/.test(HTML) && countWord("unlinkedHTML") >= 2,
+      "ولوليّ بلا تلميذةٍ مرتبطة شاشةٌ صريحة لا بيانات تلميذات أخريات");
+    chk(/currentRole==="parent"\|\|currentRole==="student"/.test(HTML),
+      "وhydrate لا تُبقي بيانات التجربة المحلّية لحسابٍ غير مرتبط");
+
+    /* ③ القناة التي تكتب — وإلّا فهي دعوى. */
+    const sa = fn("sendAbsenceAlerts") || "";
+    chk(!!sa, "sendAbsenceAlerts معرَّفة");
+    chk(/enqueue\("notifications"/.test(sa),
+      "تنبيه الغياب **يكتب صفًّا** في notifications (وهي قناة وليّ الأمر الوحيدة بلا مزوّد)");
+    chk(/case "notifications":\{/.test(HTML) && /sidOrNull\(o\.student_id\)/.test(HTML),
+      "وrowFor يعرف جدول notifications ويمرّر student_id على sidOrNull (وإلّا سقط على default وأرسل رقمًا محلّيًّا إلى عمود uuid)");
+    chk(/isStaffRole\(currentRole\)/.test(sa),
+      "والإرسال مشروطٌ بمن تملكه السياسة (notif_insert = is_staff)");
+    chk(/const isStaffRole=r=>STAFF_ROLES\.has\(r\)/.test(HTML) &&
+        /"reception"\]/.test(HTML.slice(HTML.indexOf("const STAFF_ROLES"), HTML.indexOf("const STAFF_ROLES") + 200)),
+      "وSTAFF_ROLES تشمل الأمانة (بخلاف can_record) كما تشملها is_staff على الخادم");
+
+    /* ④ اسم المدرسة من الخادم لا مثبَّتًا في الكود. */
+    chk(!/ابتدائية النور/.test(sa) && !/`EDUVIA — ابتدائية النور/.test(HTML),
+      "نصّ رسالة الغياب لم يعد يثبّت اسم مدرسةٍ في الكود");
+    chk(/function smsBody\(st\)\{return `EDUVIA — \$\{CURRENT_SCHOOL\}/.test(HTML),
+      "واسم المؤسسة يأتي من CURRENT_SCHOOL المقروء من schools.name");
+    /* وثلاثة مواضع أخرى كانت تثبّته: صفّ الإعدادات، وتقرير الحضور، وكشف النقاط. */
+    for (const s of ["اسم المؤسسة</span><b>ابتدائية النور",
+                     "تقرير الحضور اليومي — ابتدائية النور",
+                     "ابتدائية النور (بنات) · الموسم الدراسي"]) {
+      chk(!HTML.includes(s), `لا اسم مدرسةٍ مثبَّت في الواجهة: «${s.slice(0, 26)}…»`);
+    }
+    chk(/<b id="orgName">/.test(HTML) && /_orgEl\.textContent=CURRENT_SCHOOL/.test(HTML),
+      "وصفّ الإعدادات يُملأ من اسم المؤسسة المقروء من الخادم");
+
+    /* ⑤ سجلّ الاشتراك: الجدول يُضاف بـsql/007، والقراءة تتحمّل غيابه. */
+    const SQL7 = fs.readFileSync(path.join(ROOT, "sql/007_guardians_subscription.sql"), "utf8");
+    chk(/create table if not exists guardians_subscription/.test(SQL7),
+      "sql/007 يُنشئ guardians_subscription (آمن للإعادة)");
+    chk(/enable row level security/.test(SQL7) && /profile_id = auth\.uid\(\)/.test(SQL7),
+      "وعليه RLS: الوليّ يقرأ سجلّه وحده");
+    chk(/my_role\(\) in \('director','reception'\)/.test(SQL7),
+      "والكتابة للمدير والأمانة وحدهما (لا الوليّ يمدّد اشتراكه)");
+    chk(/guardians_subscription/.test(fn("hydrate") || "") &&
+        /sr\.error\?null/.test(fn("hydrate") || ""),
+      "وhydrate تقرأه بحذرٍ مستقلّ عن get() — فغياب الجدول ليس عطبًا");
+
+    /* ⑥ التحديث الحيّ يبلغ وليّ الأمر — وإلّا فالغياب يُسجَّل ولا يتحرّك شيء. */
+    const sig = fn("stateSignature") || "";
+    chk(/s\.state/.test(sig) && /notifs\.length/.test(sig),
+      "بصمة التحديث تشمل حالة الحضور وعدد الإشعارات (وكانت خارجهما ⇒ لا إعادة رسم عند الغياب)");
+    const rf = fn("refreshFromServer") || "";
+    chk(/renderParentWing\(\)/.test(rf) && /renderStudentWing\(\)/.test(rf),
+      "والتحديث الخلفيّ يُعيد رسم الجناحين (render تبني شاشات الطاقم وحدها)");
+    chk(/unlinkedHTML\(\)/.test(fn("renderStudentWing") || ""),
+      "وتلميذةٌ بلا سجلّ ترى رسالةً صريحة لا صفحةً بيضاء");
+    /* الحارس يقيس **السياسة** لا الكلمة: التعليق في الملفّ يذكر «الحجب» شرحًا،
+       فلا يُقرأ كأنّه سياسة. والمقيس: ألّا ترد `paid_until` في أيّ create policy
+       (أمثلة الاستعمال في آخر الملفّ خارج القياس). */
+    const liveSQL = SQL7.split("--  تسجيل دفعة")[0];
+    const policies = liveSQL.split(/create policy/).slice(1);
+    chk(policies.length >= 2 && policies.every((c) => !/paid_until/.test(c)),
+      "ولا سياسةَ حجبٍ بمهلة الدفع (paid_until لا يرد في أيّ create policy) — إخفاء غياب طفلة عن أمّها يضرّ الطفل");
+  }
+
   /* ------------------------------------------------------------ الحصيلة */
   console.log("\n" + "─".repeat(64));
   console.log(`__EDUVIA_SUITE_DONE__ ok=${pass} fail=${failures.length}`);

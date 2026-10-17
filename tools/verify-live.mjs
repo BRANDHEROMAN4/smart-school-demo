@@ -528,6 +528,55 @@ const whoami = async (tok) => {
     console.log(`\x1b[33m⚠️  بقي صفٌّ واحد في gate_log بـclient_id=${tag}-gl — لا سياسة حذف عليه بالقصد\x1b[0m`);
   }
 
+  /* ---------- ⑦ وليّ الأمر: يرى ابنته وحدها — قراءةٌ فقط ----------
+     لا نكتب صفًّا هنا: `notifications` بلا سياسة DELETE، فصفٌّ يكتبه الإثبات
+     يبقى أبدًا على حساب طفلةٍ حقيقيّة. والعزل يُقاس بالقراءة، وهي كافية. */
+  console.log("\n▸ ⑦ وليّ الأمر: RLS تُحدّد ابنته، والقناة المجّانية مقروءة");
+  const parentRow = rows.find((c) => c[0] === "وليّ أمر");
+  if (!parentRow) {
+    console.log("\x1b[33m⚠️  تُخطّي: لا صفَّ وليّ أمر في roster.csv — أعِد تشغيل provision.mjs بعد تنفيذ sql/007\x1b[0m");
+  } else if (!/^\d{6}$/.test(parentRow[4])) {
+    /* الحساب موجود سلفًا ⇒ الكشف لا يحمل رمزه (لا نطبع رقمًا لا يعمل). */
+    console.log("\x1b[33m⚠️  تُخطّي: رمز الوليّ غير مُدرَج في الكشف (حسابٌ موجود سلفًا — رمزه السابق هو النافذ)\x1b[0m");
+  } else {
+    /* تطبيعٌ مصغّر للمقارنة فقط: رقم الهاتف كما كُتب في students قد يكون
+       بصيغةٍ أخرى غير الموحَّدة التي في الكشف. */
+    const norm = (p) => String(p || "").replace(/\D/g, "").replace(/^(00213|213)/, "").replace(/^0+/, "");
+    let par = null;
+    try { par = await login(parentRow[1], parentRow[4]); }
+    catch (e) { no("دخول وليّ الأمر", e.message); }
+    if (par) {
+      ok(`دخول ${parentRow[1]} برقم هاتفه — الصيغة الموحَّدة تعمل على الخادم`);
+      const kids = await get("students", "select=id,card_no,full_name,parent_phone", par);
+      chk(kids.status === 200 && Array.isArray(kids.body) && kids.body.length > 0,
+          "يقرأ سجلّ أبنائه", `HTTP ${kids.status} · ${JSON.stringify(kids.body).slice(0, 140)}`);
+      const body = Array.isArray(kids.body) ? kids.body : [];
+      chk(body.length > 0 && body.every((s) => norm(s.parent_phone) === norm(parentRow[1])),
+          `وكلّ من يراه ابنُه فعلًا (${body.length} صفًّا، ورقم وليّها يطابق)`,
+          "لو ظهر غريب فالعزل مكسور — ولو ظهر صفرًا فالربط في guardians ناقص");
+      const gl = await get("gate_log", "select=id", par);
+      chk(gl.status === 200 && Array.isArray(gl.body) && gl.body.length === 0,
+          "ولا يرى شيئًا من سجلّ البوابة (السياسة تُصفّر لا تُخطئ)",
+          `HTTP ${gl.status}`);
+      const kidIds = new Set(body.map((s) => s.id));
+      const nt = await get("notifications", "select=id,student_id,body", par);
+      chk(nt.status === 200 &&
+          (nt.body || []).every((n) => n.student_id == null || kidIds.has(n.student_id)),
+          "وإشعاراته تخصّ ابنه وحده (قناة التطبيق المجّانية)",
+          `HTTP ${nt.status}`);
+      const sub = await get("guardians_subscription", "select=paid_until,amount_dzd", par);
+      chk(sub.status === 200,
+          Array.isArray(sub.body) && sub.body.length
+            ? `وسجلّ اشتراكه مقروء (حتى ${String(sub.body[0].paid_until).slice(0, 10)})`
+            : "وسجلّ اشتراكه مقروء (لم تُسجَّل دفعة بعد — وهذا صادق لا عطب)",
+          `HTTP ${sub.status} · ${JSON.stringify(sub.body).slice(0, 140)}`);
+      const w = await post("notifications",
+        { student_id: body[0] && body[0].id, kind: "absence", body: "إثبات" }, par);
+      chk(w.status === 403, "ولا يكتب إشعارًا بنفسه (notif_insert تشترط is_staff)",
+          `HTTP ${w.status} · ${JSON.stringify(w.body).slice(0, 140)}`);
+    }
+  }
+
   console.log("\n" + "─".repeat(64));
   console.log(`\x1b[1m${pass} نجح · ${fail} فشل\x1b[0m`);
   console.log(fail === 0

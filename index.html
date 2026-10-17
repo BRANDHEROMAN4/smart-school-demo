@@ -256,8 +256,8 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     <svg class="emblem" viewBox="0 0 72 72" width="64" height="64" style="display:block;margin:0 auto 10px"><use href="#emblemG"/></svg>
     <h1 class="word" style="font-size:30px">EDUVIA</h1>
     <p>منظومة إدارة التعليم الذكي</p>
-    <label for="loginId">رقم البطاقة أو اسم المستخدم</label>
-    <input id="loginId" type="text" autocomplete="username" placeholder="RF-0001" aria-label="رقم البطاقة أو اسم المستخدم">
+    <label for="loginId">رقم البطاقة أو رقم الهاتف أو اسم المستخدم</label>
+    <input id="loginId" type="text" autocomplete="username" placeholder="RF-0001 أو 0555123456" aria-label="معرِّف الدخول: رقم البطاقة أو رقم الهاتف">
     <label for="p">الرمز السرّي</label>
     <input id="p" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" aria-label="الرمز السرّي">
     <button class="enter" id="loginBtn" onclick="doLogin()">دخول</button>
@@ -351,6 +351,19 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
         <button data-page="ssummons"><span class="ic">📨</span> استدعاءات وليّ أمري</button>
         <button data-page="sannounce"><span class="ic">📢</span> الإعلانات</button>
         <button data-page="complaints"><span class="ic">📝</span> شكاوى واقتراحات</button>
+      </div>
+    </div>
+    <div class="navgroup">
+      <button class="navhead" onclick="toggleGroup(this)"><span class="ic">👨‍👩‍👧</span> متابعة ابنتي <span class="chev">▾</span></button>
+      <div class="navsub">
+        <button data-page="phome"><span class="ic">🏠</span> نظرة عامة</button>
+        <button data-page="pattendance"><span class="ic">🗓️</span> الحضور والغياب</button>
+        <button data-page="pgrades"><span class="ic">📊</span> النقاط والمعدّلات</button>
+        <button data-page="pwork"><span class="ic">📚</span> الواجبات المنزلية</button>
+        <button data-page="pnotes"><span class="ic">📌</span> السلوك والملاحظات</button>
+        <button data-page="psummon"><span class="ic">📨</span> الاستدعاءات</button>
+        <button data-page="pannounce"><span class="ic">📢</span> الإعلانات</button>
+        <button data-page="paccount"><span class="ic">⚙️</span> حسابي واشتراكي</button>
       </div>
     </div>
   </div>
@@ -559,7 +572,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
   <section id="settings" class="page hidden">
     <div class="panel">
       <h2>⚙️ إعدادات المؤسسة</h2>
-      <div class="row"><span>اسم المؤسسة</span><b>ابتدائية النور — قسم البنات</b></div>
+      <div class="row"><span>اسم المؤسسة</span><b id="orgName">—</b></div>
       <div class="row"><span>الطور</span><b>التعليم الابتدائي (السنة 1 → 5)</b></div>
       <div class="row"><span>عدد الأقسام</span><b id="setClasses">—</b></div>
       <div class="row"><span>عدد التلميذات</span><b id="setStudents">—</b></div>
@@ -709,6 +722,15 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
   <section id="ssummons" class="page hidden"></section>
   <section id="sannounce" class="page hidden"></section>
   <section id="complaints" class="page hidden"></section>
+  <!-- ===== جناح وليّ الأمر ===== -->
+  <section id="phome" class="page hidden"></section>
+  <section id="pattendance" class="page hidden"></section>
+  <section id="pgrades" class="page hidden"></section>
+  <section id="pwork" class="page hidden"></section>
+  <section id="pnotes" class="page hidden"></section>
+  <section id="psummon" class="page hidden"></section>
+  <section id="pannounce" class="page hidden"></section>
+  <section id="paccount" class="page hidden"></section>
   <!-- ===== جناح المفتّش ===== -->
   <section id="ischome" class="page hidden"></section>
   <section id="iscvisits" class="page hidden"></section>
@@ -940,8 +962,8 @@ const UNBACKED={
   cards:    "حالات البطاقات (نشطة/مفقودة) لا تُقرأ من الخادم — الجميع يظهر «نشطة»",
   timetable:"التوقيت نموذجيّ ثابت: لا يُقرأ من الخادم ولا يُحفظ فيه",
   calendar: "الأحداث تجريبية مولَّدة في المتصفّح، ولا مصدر لها على الخادم",
-  parents:  "عمود «الحالة: مفعّل» وهميّ — لا حساب وليّ أمر على الخادم بعد",
-  summons:  "لا يبلغ الاستدعاء وليّ الأمر عبر قناة حقيقية بعد (لا حساب وليّ أمر على الخادم)",
+  parents:  "عمود «الحالة» ثابت في القالب — لا يُقرأ من الخادم (والحسابات تُنشأ بـtools/provision.mjs)",
+  summons:  "الاستدعاء يقرؤه وليّ الأمر في تطبيقه، لكن لا رسالةَ SMS/واتساب تبلغه بعد (لا مزوّد)",
   gate:     "قارئ البطاقات محاكاة: سجلّ البوابة مولَّد، ولا جهاز حقيقيّ موصول",
   /* ⚠️ جناحا المفتّش والسلطة كانا **بلا إعلان**: لوحتان لدورين لهما حسابان
      حقيقيّان على الخادم (`inspector` · `authority` في roster.csv)، تُبنى كلّها
@@ -1079,7 +1101,7 @@ function render(){
 
   // Reports preview
   document.getElementById("reportPreview").innerHTML=`
-    <h2 style="font-size:16px">تقرير الحضور اليومي — ابتدائية النور (بنات)</h2>
+    <h2 style="font-size:16px">تقرير الحضور اليومي — ${esc(CURRENT_SCHOOL)}</h2>
     <p class="muted">${dateStr()}</p>
     <table><thead><tr><th>المؤشّر</th><th>القيمة</th></tr></thead><tbody>
     <tr><td>إجمالي التلميذات</td><td>${s.total}</td></tr>
@@ -1219,7 +1241,9 @@ const CHANNELS=[
 ];
 let activeChannels={app:true,sms:true,call:false};
 let OUTBOX=[];
-function smsBody(st){return `EDUVIA — ابتدائية النور: لم تحضر ابنتكم ${st.name} (${st.cls}) اليوم. للاستفسار يرجى الاتصال بالإدارة.`;}
+/* اسم المؤسسة من الخادم لا من الكود: كان مثبَّتًا «ابتدائية النور» فيُرسل
+   كلُّ وليٍّ رسالةً باسم مدرسة ليست له، وأيّ مدرسة ثانية كذلك. */
+function smsBody(st){return `EDUVIA — ${CURRENT_SCHOOL}: لم تحضر ابنتكم ${st.name} (${st.cls}) اليوم. للاستفسار يرجى الاتصال بالإدارة.`;}
 function queueMsg(st,text,channel){
   const m={id:"m"+Date.now()+Math.random().toString(36).slice(2,6),sid:st.id,phone:st.phone,name:st.name,parent:st.parent,text,channel,status:"في الانتظار",time:nowHM()};
   OUTBOX.unshift(m);
@@ -1265,7 +1289,17 @@ function sendAbsenceAlerts(){
   if(!CHANNELS.some(c=>activeChannels[c.k])){toast("تنبيه","اختر قناة واحدة على الأقل قبل الإرسال.","a");return;}
   const t=nowHM();let nApp=0,nSms=0,nCall=0;
   ab.forEach(st=>{
-    if(activeChannels.app){notifs.unshift({time:t,type:"absence",channel:"app",text:`تنبيه غياب إلى ${st.parent}: لم تحضر ابنته ${st.name} (${st.cls}) اليوم.`});nApp++;}
+    if(activeChannels.app){
+      notifs.unshift({time:t,type:"absence",channel:"app",text:`تنبيه غياب إلى ${st.parent}: لم تحضر ابنته ${st.name} (${st.cls}) اليوم.`});
+      /* ⚠️ هنا كان **الوعد بلا كتابة**: `notifs` مصفوفة محلّية، فتقول الواجهة
+         «إشعار تطبيق» ووليُّ الأمر لا يعلم شيئًا — ولا قناةَ أخرى تصل بلا
+         مزوّد. فالقناة الوحيدة المجّانية كانت معلَّقةً على هذه الأسطر. */
+      if(isStaffRole(currentRole))
+        enqueue("notifications", rowFor("notifications",{
+          student_id:st.id, kind:"absence", at_time:t,
+          body:`لم تحضر ابنتكم ${st.name} (${st.cls}) اليوم ${t}.`}));
+      nApp++;
+    }
     if(activeChannels.sms){queueMsg(st,smsBody(st),"sms");nSms++;}
     if(activeChannels.call){queueMsg(st,`اتصال بـ ${st.parent} بشأن غياب ${st.name} (${st.cls}).`,"call");nCall++;}
   });
@@ -1340,7 +1374,10 @@ const ROLES={
   reception:{label:"الأمانة / الاستقبال",ic:"🗂️",pages:["dashboard","students","cards","parents","gate"]},
   inspector:{label:"المفتّش",ic:"🕵️",pages:["ischome","iscvisits","isccheck","iscnotes"]},
   authority:{label:"المديرية / الوصاية",ic:"🛰️",pages:["obshome","obsdropout","obsmap","obsreports"]},
-  student:{label:"التلميذ",ic:"🎒",pages:["shome","sgrades","sattendance","stimetable","swork","snotes","ssummons","sannounce","complaints"]}
+  student:{label:"التلميذ",ic:"🎒",pages:["shome","sgrades","sattendance","stimetable","swork","snotes","ssummons","sannounce","complaints"]},
+  /* وليّ الأمر يرى **ابنته** لا لوحة إدارة: صفحاته كلّها `p…` ولا تشمل
+     صفحةً إداريّة واحدة. والاختبار الساكن يمنع تسرّب أيٍّ منها إليه. */
+  parent:{label:"وليّ الأمر",ic:"👨‍👩‍👧",pages:["phome","pattendance","pgrades","pwork","pnotes","psummon","pannounce","paccount"]}
 };
 const ALL_PAGES=["dashboard","students","classes","teachers","cards","attendance","gate","grades","timetable","thub","calendar","parents","announcements","cinbox","summons","notifications","stats","reports","settings"];
 let currentRole="director";
@@ -1400,6 +1437,10 @@ function applyRole(k){
   const chip=document.getElementById("roleChip");
   chip.textContent=r.ic+" "+((CURRENT_USER&&CURRENT_USER.name)?CURRENT_USER.name:r.label);
   if(k==="student"){ if(!meStudent) meStudent=students[0]; renderStudentWing(); }
+  /* وليّ الأمر: `students` عنده **ابنته وحدها** (سياسة `students_read`)،
+     فلا حاجة إلى معرِّف من الخادم — `profiles.student_id` تبقى null للوليّ
+     والربط في جدول `guardians`. */
+  if(k==="parent"){ if(!meStudent) meStudent=students[0]||null; renderParentWing(); }
   if(k==="inspector"){ renderInspectorWing(); }
   if(k==="authority"){ renderObservatory(); }
   showPage(allowed[0]);
@@ -1421,6 +1462,11 @@ async function doLogin(){
        لأنّه لم يكن هناك حساب. نُصفّر المحاولات فلا يُسقَط صفٌّ سليم بالخطأ. */
     QUEUE.forEach(i=>{ i.tries=0; delete i.lastError; }); saveQueue();
 
+    /* الدور **قبل** الجلب: `hydrate()` تقرأ `currentRole` لتقصر قائمة الجداول
+       عليه (سياسة `gate_read` تشترط `is_staff`)، وكان `applyRole` يأتي بعدها
+       ⇒ تُقيس دورَ الجلسة السابقة لا دورَ من دخل للتوّ. */
+    currentRole=r.role;
+
     /* الجلب **قبل** أوّل عرض: بدونه تومض بيانات محلّية مولَّدة ثم تُستبدَل،
        فترى المستخدمة أرقامًا ليست لها لحظةً كاملة. الترتيب هنا مقصود. */
     if(r.remote){
@@ -1428,16 +1474,21 @@ async function doLogin(){
       if(h.ok){
         /* الاعتراض حقٌّ بمهلة سبعة أيام — فلا يُنتظر أن يبحث عنه المدير. */
         const obj=h.objections?' · ⚖️ '+h.objections+" اعتراضًا بانتظار قرارك":"";
+        /* ما بقي في `errs` بعد قصر الجداول على الدور **غيرُ متوقَّع** —
+           يُقال بدل أن يُدفن، فالصمت هنا يبدو «لا بيانات» وهو ليس كذلك. */
+        const bad=(h.errs&&h.errs.length)?" · ⚠️ "+h.errs.length+" جدولًا لم تُجلب":"";
         toast("من المدرسة ☁️",
-          h.students+" تلميذة · "+h.notes+" ملاحظة سلوك · محمّلة من الخادم"+obj+".","g");
+          h.students+" تلميذة · "+h.notes+" ملاحظة سلوك · محمّلة من الخادم"+obj+bad+".","g");
       }else{
         toast("لم يكتمل الجلب ⚠️",
           "المنصّة تعمل ببيانات هذا الجهاز. "+(h.reason==="offline"?"لا شبكة.":"أعيدي المحاولة لاحقًا."),"y");
       }
     }
 
-    /* التلميذة تُعرَّف بـuuid الخادم لا برقم محلّي. */
-    if(r.role==="student"){
+    /* التلميذة تُعرَّف بـuuid الخادم لا برقم محلّي — ووليّ الأمر كذلك:
+       لا معرّف ابنتِه في `profiles` (يبقى null)، بل `students` عنده محصورة
+       بابنته بفعل RLS ⇒ `students[0]` هي الصحيحة بلا سؤالٍ للخادم. */
+    if(r.role==="student"||r.role==="parent"){
       meStudent = (CURRENT_USER.studentId
         ? students.find(s=>s.cloudId===CURRENT_USER.studentId)
         : null) || students[0] || null;
@@ -1795,7 +1846,7 @@ function printReportCard(id){
   document.getElementById("printArea").innerHTML=`<div class="rc">
     <div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #16366B;padding-bottom:10px">
       <svg viewBox="0 0 72 72" width="46" height="46"><use href="#emblemG"/></svg>
-      <div><h1>كشف النقاط — ${TERMS[term]}</h1><div style="font-size:12px">ابتدائية النور (بنات) · الموسم الدراسي 2026/2027 · منظومة EDUVIA</div></div>
+      <div><h1>كشف النقاط — ${TERMS[term]}</h1><div style="font-size:12px">${esc(CURRENT_SCHOOL)} · الموسم الدراسي 2026/2027 · منظومة EDUVIA</div></div>
     </div>
     <table style="margin-top:10px"><tr><td><b>التلميذة:</b> ${st.name}</td><td><b>القسم:</b> ${st.cls}</td><td><b>الرقم:</b> ${pad(st.id,4)}</td></tr></table>
     <table><thead><tr><th>المادة</th><th>المعامل</th><th>النقطة/10</th><th>النقطة×المعامل</th></tr></thead><tbody>${rows}
@@ -2063,7 +2114,14 @@ let complaints=[
   {time:"الأحد 13 سبتمبر",kind:"شكوى",target:"النظافة",text:"دورات المياه تحتاج إلى تنظيفٍ أكثر.",by:"مجهول",status:"قيد المعالجة"}
 ];
 function renderStudentWing(){
-  const st=meStudent; if(!st) return;
+  const st=meStudent;
+  /* حسابٌ بلا تلميذةٍ مرتبطة (لا صفّ في `guardians`): الصدق أن نقولها، لا أن
+     نترك كلّ صفحةٍ بيضاء بلا سبب مفهوم. */
+  if(!st){
+    ["shome","sgrades","sattendance","stimetable","swork","snotes","ssummons","sannounce","complaints"]
+      .forEach(p=>{const el=document.getElementById(p); if(el) el.innerHTML=unlinkedHTML();});
+    return;
+  }
   const r=studentRank(st,0);
   const smiss=marksMissing(st.id,0);   /* موادّ الفصل الأول بلا سندٍ من الخادم */
   document.getElementById("shome").innerHTML=`
@@ -2115,6 +2173,87 @@ function renderStudentWing(){
     </div>
     <div class="panel"><h2>📬 طلباتي السابقة</h2><div id="cList"></div></div>`;
   cTargets(); renderComplaints();
+}
+/* ========================================================= جناح وليّ الأمر
+   يرى **ابنته**: `students` عنده محصورة بها بفعل `students_read`، فلا يحتاج
+   معرِّفًا من الخادم (`profiles.student_id` تبقى null للوليّ، والربط في
+   `guardians`). والخطاب بضمير الغائب («ابنتها») لا المتكلّم («أنا») — وهذا
+   كلّ الفرق بين هذه الدالّة وشقيقتها `renderStudentWing`. */
+const PARENT_PAGES=["phome","pattendance","pgrades","pwork","pnotes","psummon","pannounce","paccount"];
+/* حسابٌ بلا تلميذةٍ مرتبطة: الصدق أن نقولها، لا أن نعرض بيانات تلميذاتٍ
+   أخريات وهي ما كان يقع — الشرائح المحلّية تبقى فتبدو «ابنته». */
+function unlinkedHTML(){
+  const who=esc((CURRENT_USER&&CURRENT_USER.loginId)||"—");
+  return `<div class="panel"><div class="notice y" style="font-size:14px;line-height:2">
+    <b>لا تلميذة مرتبطة بهذا الحساب.</b><br>
+    الحساب قائم، لكنه لم يُربَط بعد بأيّ تلميذة في سجلّ المؤسسة.<br>
+    راجعي الإدارة لربط حسابك بالمعرِّف <span class="code">${who}</span>.</div></div>`;
+}
+function renderParentWing(){
+  const st=meStudent;
+  if(!st){ PARENT_PAGES.forEach(p=>{const el=document.getElementById(p); if(el) el.innerHTML=unlinkedHTML();}); return; }
+  const r=studentRank(st,0);
+  const smiss=marksMissing(st.id,0);
+  const sub=SYNC.subscription;
+  document.getElementById("phome").innerHTML=`
+    <div class="hero"><div class="htxt"><b>متابعة ${esc(st.name)} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${esc(st.cls)} · ${esc(CURRENT_SCHOOL)}</p></div></div>
+    <div class="cards" style="grid-template-columns:repeat(4,1fr)">
+      ${kpiCard("نسبة حضورها","🗓️",pctTxt(st.attRate),"green")}
+      ${kpiCard("معدّلها العام","🎯",st.avg[0]+" /10","blue")}
+      ${kpiCard("رتبتها في القسم","🏅",r.rank+" / "+r.total,"")}
+      ${kpiCard("أيام غيابها","🚫",st.absDays,"red")}
+    </div>
+    <div class="grid2">
+      <div class="panel"><h2>🕐 حالتها اليوم</h2>
+        <div class="notice b">${pill(st.state)} ${st.time?"· "+ltr(st.time):""}</div>
+        <div class="muted" style="margin-top:6px">يتغيّر هذا لحظة تسجيل الحضور في المؤسسة.</div></div>
+      <div class="panel"><h2>📢 آخر الإعلانات</h2>${announcements.slice(0,3).map(a=>`<div class="notice b"><b>${esc(a.title)}</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">${esc(a.body)}</div></div>`).join("")||'<div class="muted">لا إعلانات منشورة بعد.</div>'}</div>
+    </div>`;
+  document.getElementById("pattendance").innerHTML=`
+    <div class="panel"><h2>🗓️ الحضور والغياب</h2>
+      <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+        ${kpiCard("نسبة الحضور","✅",pctTxt(st.attRate),"green")}
+        ${kpiCard("أيام الغياب","🚫",st.absDays,"red")}
+        ${kpiCard("حالة اليوم","🕐",st.time?ltr(st.time):"—","")}
+      </div>
+      <div class="notice b">حالة ${esc(st.name)} اليوم: ${pill(st.state)}</div>
+      <div class="muted" style="margin-top:8px">النسبة تُحسَب على الأيام <b>المُسجَّلة</b> وحدها، ويُعرَض «—» إن لم يُسجَّل شيء بعد.</div>
+    </div>`;
+  document.getElementById("pgrades").innerHTML=`
+    <div class="panel"><div class="section-head"><h2>📊 نقاط ${esc(st.name)} — الفصل الأول</h2><button class="btn" onclick="printReportCard(${st.id})">🖨️ كشف النقاط</button></div>
+    <div class="cards" style="grid-template-columns:repeat(3,1fr)">${kpiCard("المعدّل","🎯",st.avg[0]+" /10","blue")}${kpiCard("الرتبة","🏅",r.rank+" / "+r.total,"")}${kpiCard("التقدير","⭐",appreciation(st.avg[0]),"")}</div>
+    <table><thead><tr><th>المادة</th><th>المعامل</th><th>النقطة /10</th></tr></thead><tbody>${SUBJECTS.map(s=>`<tr><td>${s.n}</td><td>${s.c}</td><td class="${markClass(st.marks[0][s.n])}"><b>${st.marks[0][s.n]}</b></td></tr>`).join("")}</tbody></table>
+    ${smiss.length?`<div class="notice y" style="margin-top:10px">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${smiss.map(esc).join(" · ")}</div>`:""}</div>`;
+  document.getElementById("pwork").innerHTML=`
+    <div class="panel"><h2>📚 الواجبات المنزلية — القسم ${esc(st.cls)}</h2>
+    ${HOMEWORK.filter(h=>h.cls===st.cls||h.cls==="الكل").map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(h.subj)}</b><span class="pill late">📅 ${esc(h.due)}</span></div><div style="margin-top:5px;font-size:13px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}
+    <div class="muted" style="margin-top:8px">تتابعين هنا ما كُلِّفت به ابنتك، لتساعديها على إنجازه في وقته.</div></div>`;
+  const _nb=behavBalance();
+  document.getElementById("pnotes").innerHTML=`
+    <div class="panel"><h2>📌 السلوك والملاحظات</h2>
+    <div class="notice g">التقدير السلوكي العام: <b>${esc(behavVerdictOf(st))}</b></div>
+    <div class="notice b" style="font-size:12.5px"><b>حقوق ابنتك مضمونة:</b> سجلّ السلوك <b>متوازن</b> (إيجابي/سلبي)، ولها <b>حقّ الاعتراض</b> على أيّ ملاحظة خلال ${BEHAV_REPLY_DAYS} أيام، ولا تُحفظ الملاحظات إلا <b>${BEHAV_RETENTION_DAYS} يومًا</b> ثم تُؤرشف.</div>
+    <div class="muted" style="margin:4px 0 6px">توازن السجلّ: ${_nb.pos} إيجابي · ${_nb.neg} سلبي</div>
+    ${NOTES.filter(n=>n.sid===st.id).map(n=>noteCard(n,"parent")).join("")||'<div class="muted">لا ملاحظات مسجَّلة. 🌱</div>'}
+    <div class="muted" style="margin-top:10px">لتقديم اعتراض على ملاحظة، تفعله ابنتك من حسابها خلال المهلة — أو راجعي الإدارة مباشرةً.</div></div>`;
+  document.getElementById("psummon").innerHTML=`
+    <div class="panel"><h2>📨 الاستدعاءات</h2>
+    ${SUMMONS.filter(x=>x.sid===st.id).map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · الحالة: ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا استدعاءات حاليًا.</div>'}
+    </div>`;
+  document.getElementById("pannounce").innerHTML=`
+    <div class="panel"><h2>📢 إعلانات المؤسسة</h2>
+    ${announcements.map(a=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(a.title)}</b><span class="muted">${esc(a.time||"")}</span></div><div style="margin-top:5px;font-size:13px">${esc(a.body)}</div></div>`).join("")||'<div class="muted">لا إعلانات منشورة بعد.</div>'}
+    </div>`;
+  document.getElementById("paccount").innerHTML=`
+    <div class="panel"><h2>⚙️ حسابي</h2>
+      <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>معرِّف الدخول</span><b class="code">${esc((CURRENT_USER&&CURRENT_USER.loginId)||"—")}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>المؤسسة</span><b>${esc(CURRENT_SCHOOL)}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:10px 0"><span>الاشتراك</span><b>${sub&&sub.paid_until?"سارٍ حتى "+esc(String(sub.paid_until).slice(0,10)):"غير مسجَّل بعد"}</b></div>
+      ${sub&&sub.receipt_no?`<div class="muted" style="margin-top:6px">وصل رقم ${esc(sub.receipt_no)}${sub.amount_dzd?" · "+sub.amount_dzd+" دج":""}</div>`:""}
+      <div class="muted" style="margin-top:10px">للتجديد راجعي أمانة المؤسسة.</div>
+    </div>
+    <div class="panel"><h2>🔑 الرمز السرّي</h2>
+      <div class="muted">الرمز المسلَّم على البطاقة صالح للدخول. لتغييره راجعي الإدارة في هذه المرحلة.</div></div>`;
 }
 function cTargets(){
   const kind=document.getElementById("cKind").value;
@@ -2443,7 +2582,11 @@ const SYNC = {
   /* هل رأينا صفًّا جاء من الخادم فعلًا في هذا الشاشة؟ لا تُعلَن المزامنة بدونه —
      الوسم الصادق يحتاج إثباتًا لا وعدًا (وقد تكرّر أنّ الوعد في الواجهة ليس إثباتًا). */
   gateFromServer: false,
-  summonsFromServer: false
+  summonsFromServer: false,
+  /* وليّ الأمر: سجلّ اشتراكه (يُملأ من `guardians_subscription` — جدول sql/007)
+     وعلامة «حسابٌ بلا تلميذةٍ مرتبطة» فلا تُعرَض له بياناتُ غيرِه. */
+  subscription: null,
+  unlinked: false
 };
 
 /* ---------------------------------------------------------------- الطابور
@@ -2495,6 +2638,10 @@ const ATT_STATE_DB={present:"present",absent:"absent",late:"late",pending:"pendi
    يردّه الخادم `42501`، و42501 **ليس** في PERMANENT_FAIL ⇒ ثماني محاولات ثم إنذار
    «ردّه الخادم نهائيًّا» لا تفهمه الأمانة. فنسأل قبل الإرسال بدل أن نُرسل ونعتذر. */
 const CAN_RECORD_ROLES=new Set(["director","teacher","supervisor"]);
+/* مرآة `is_staff()` على الخادم — وتشمل **الأمانة** بخلاف `can_record`
+   (التي لا تشملها). تُستعمل قبل كتابةٍ تشترط `is_staff()`، مثل `notif_insert`. */
+const STAFF_ROLES=new Set(["director","teacher","supervisor","reception"]);
+const isStaffRole=r=>STAFF_ROLES.has(r);
 const canRecord=(role)=>CAN_RECORD_ROLES.has(role);
 const MSG_CHANNEL_DB={app:"app",sms:"sms",call:"call"};
 
@@ -2615,6 +2762,16 @@ function rowFor(table,o){
       const sid=sidOrNull(o.student_id); if(sid===false) return null;
       return {student_id:sid, at_time:o.at_time, day:o.day,
               late:!!o.late, client_id:o.client_id};
+    }
+
+    /* التطبيق — **القناة التي تصل بلا مزوّد**: `notif_read` تُريها وليّ
+       الأمر لابنتها، و`notif_insert` تسمح بها للطاقم. وكانت في INSERT_ONLY
+       بلا حالةٍ هنا، فتسقط على `default` ويُرسَل الرقم المحلّي إلى عمود
+       `uuid` — فلا يصل الإشعار أبدًا. فتُمرَّر على `sidOrNull` كسجلّ البوابة. */
+    case "notifications":{
+      const sid=sidOrNull(o.student_id); if(sid===false) return null;
+      return {student_id:sid, kind:o.kind||"system", body:o.body,
+              at_time:o.at_time==null?null:o.at_time, client_id:o.client_id};
     }
 
     /* إنشاء تلميذة — school_id لا يُرسَل: مُشغّل stamp_school يشتقّه من
@@ -2864,7 +3021,12 @@ let _hydrating=false;
 function stateSignature(){
   return NOTES.map(n=>n.id+":"+n.status+":"+(n.reply?"r":"-")).join("|")+
     "#"+complaints.map(c=>(c.serverId||c.clientId||"")+":"+c.status).join("|")+
-    "#"+students.length+"#"+teachers.length;
+    "#"+students.length+"#"+teachers.length+
+    /* الحضور والإشعارات: تغيّرُهما هو **ما ينتظره وليّ الأمر** بالضبط.
+       وكانا خارج البصمة ⇒ تُسجَّل «غائبة» فلا يتحرّك شيء على شاشة الأمّ
+       حتى تُعيد تحميل الصفحة، فتبدو المنصّة غير موصولة وهي موصولة. */
+    "#"+students.map(s=>s.state+":"+(s.time||"")+":"+(s.attRate==null?"-":s.attRate)).join("|")+
+    "#"+notifs.length;
 }
 async function hydrate(){
   if(SYNC.mode!=="remote")     return {ok:false,reason:"local"};
@@ -2884,17 +3046,41 @@ async function hydrate(){
       if(r.error){ errs.push(t); return null; }
       return r.data||[];
     };
+    /* قائمة الجداول تُقصر على ما يعنيه الدور: سياسة `gate_read` تشترط
+       `is_staff() or is_overseer()`، فطلبُه من وليّ أمرٍ يُردّ **403** في كلّ
+       تحميل. وما يبقى في `errs` بعد هذا القصر غيرُ متوقَّعٍ فعلًا — ويُقال. */
+    const canGate=isStaffRole(currentRole)||currentRole==="inspector"||currentRole==="authority";
     const [sRows,nRows,gRows,aRows,stRows,anRows,ntRows,cRows,hRows,smRows,glRows]=await Promise.all([
       get("students"), get("behaviour_notes"), get("grades"),
       get("attendance"), get("staff"), get("announcements"), get("notifications"),
-      get("complaints"), get("homework"), get("summons"), get("gate_log")
+      get("complaints"), get("homework"), get("summons"),
+      canGate ? get("gate_log") : Promise.resolve(null)
     ]);
     /* سؤالٌ واحد يمنع عطبًا لاحقًا: `target`/`anonymous` يُضيفهما sql/004.
        لو أرسلناهما قبل تشغيله لرفضهما الخادم وأوقفا الطابور كلّه. */
     try{ SYNC.complaintsMeta=!(await client.from("complaints").select("target").limit(1)).error; }
     catch(e){ SYNC.complaintsMeta=false; }
 
+    /* سجلّ الاشتراك — **لوليّ الأمر وحده**. ويُقرأ بحذرٍ مستقلّ عن `get()`:
+       الجدول يُضيفه sql/007، فطلبُه قبل تشغيله يُخطئ بلا أن يعني عطبًا.
+       وغيابه يُقال صريحًا («غير مسجَّل بعد») لا يُلفَّق. */
+    if(currentRole==="parent"){
+      try{
+        const sr=await client.from("guardians_subscription")
+          .select("paid_until,amount_dzd,receipt_no").limit(1);
+        SYNC.subscription=sr.error?null:((sr.data&&sr.data[0])||null);
+      }catch(e){ SYNC.subscription=null; }
+    }
+
     if(sRows===null) return {ok:false,reason:"students-failed",errs};
+
+    /* وليٌّ أو تلميذة **بلا صفٍّ في `guardians`**: الخادم يُعيد صفرًا بلا خطأ،
+       وكانت الشرائح المحلّية تبقى مكانها فيرى **تلميذات التجربة** على أنّهنّ
+       ابنتُه. الصمت هنا ليس «لا بيانات» — بل بياناتُ غيرِه. */
+    if(sRows&&!sRows.length&&(currentRole==="parent"||currentRole==="student")){
+      students=[]; NOTES=[]; HOMEWORK=[]; SUMMONS=[];
+      SYNC.unlinked=true;
+    }
 
     /* ---------- ① التلاميذ — الهوية الحقيقية ---------- */
     /* لا ندهس معلّقًا (مبدأ ② في رأس الدالّة) — والحضور كان يخالفه: مصفوفة
@@ -3128,10 +3314,24 @@ const sha256=async s=>{
   const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
 };
-/* "RF-0001" → "rf-0001@eduvia.local"
+/* رقم الهاتف — صيغةٌ واحدة لكل الكتابات.
+   بلا توحيد: `0555123456` و`+213555123456` و`0555 12 34 56` تُنتج ثلاثة
+   معرفاتٍ متمايزة ⇒ الأمّ تكتب رقمها بطريقتها فتُمنع من الدخول وحسابُها قائم.
+   ويُطبَّق **عند الإنشاء وعند الدخول معًا**. نسخةٌ مطابقة في الملفّ الآخر،
+   وحارسٌ ساكن في tests/static.test.js يقابلهما نصًّا كي لا تفترقا. */
+function canonPhone(v){
+  const raw=String(v==null?"":v).trim();
+  let d=raw.replace(/\D/g,"");
+  if(/^00213/.test(d)) d=d.slice(5);
+  else if(/^213/.test(d)) d=d.slice(3);
+  d=d.replace(/^0+/,"");
+  if(!/^\d{9}$/.test(d)) return raw;   /* ليس جوّالًا ⇒ يُترك كما هو */
+  return "0"+d;
+}
+/* "RF-0001" → "rf-0001@eduvia.local"  |  "0555123456" → "0555123456@eduvia.local"
    بريد اصطناعي لا يُرسَل إليه شيء — لكنه يسمح لـSupabase Auth أن يعمل
    بأصالته بلا مزوّد بريد، وبلا حسابات بريد لأطفال. */
-const toEmail=loginId=>String(loginId).trim().toLowerCase().replace(/[^a-z0-9._-]/g,"-")+"@eduvia.local";
+const toEmail=loginId=>canonPhone(loginId).toLowerCase().replace(/[^a-z0-9._-]/g,"-")+"@eduvia.local";
 
 let ACCOUNTS=null;
 const DEMO_PIN_STUDENT="111111";
@@ -3161,18 +3361,22 @@ async function buildAccounts(){
 
 async function eduviaLogin(loginId,pin){
   loginId=String(loginId||"").trim(); pin=String(pin||"").trim();
-  if(!loginId||!pin) return {ok:false,error:"أدخلي رقم البطاقة والرمز السرّي."};
+  if(!loginId||!pin) return {ok:false,error:"أدخلي معرِّف الدخول والرمز السرّي."};
 
   if(SYNC.mode==="remote"){
     const client=await ensureClient();
     if(!client) return {ok:false,error:"تعذّر الاتصال بالخادم. تحقّقي من الشبكة."};
     const {data,error}=await client.auth.signInWithPassword({email:toEmail(loginId),password:pin});
-    if(error) return {ok:false,error:"رقم البطاقة أو الرمز السرّي غير صحيح."};
+    if(error) return {ok:false,error:"معرِّف الدخول أو الرمز السرّي غير صحيح."};
     const {data:prof,error:pe}=await client.from("profiles")
       .select("role,display_name,student_id,school_id").eq("id",data.user.id).single();
     if(pe||!prof) return {ok:false,error:"لا ملفّ مرتبط بهذا الحساب. راجعي الإدارة."};
     const {data:school}=await client.from("schools").select("name").eq("id",prof.school_id).single();
     if(school&&school.name) CURRENT_SCHOOL=school.name;
+    /* الاسم المقروء من الخادم يظهر في صفّ الإعدادات أيضًا — كان مثبَّتًا
+       «ابتدائية النور» فيقرأ كلُّ مستخدمٍ اسمَ مدرسةٍ ليست له. */
+    const _orgEl=document.getElementById("orgName");
+    if(_orgEl) _orgEl.textContent=CURRENT_SCHOOL;
     scheduleFlush(200);                              /* أعمال جرت قبل الدخول تُرسَل الآن */
     SYNC.uid=data.user.id;
     return {ok:true,role:prof.role,name:prof.display_name,studentId:prof.student_id,
@@ -3182,7 +3386,7 @@ async function eduviaLogin(loginId,pin){
   const accs=await buildAccounts();
   const h=await sha256(loginId.toLowerCase()+"|"+pin);
   const acc=accs.find(a=>a.loginId.toLowerCase()===loginId.toLowerCase()&&a.hash===h);
-  if(!acc) return {ok:false,error:"رقم البطاقة أو الرمز السرّي غير صحيح."};
+  if(!acc) return {ok:false,error:"معرِّف الدخول أو الرمز السرّي غير صحيح."};
   return {ok:true,role:acc.role,name:acc.name,studentId:acc.studentId,remote:false};
 }
 
@@ -3217,6 +3421,10 @@ async function refreshFromServer(force){
   if(h.ok && h.signature && h.signature!==SYNC._sig){
     SYNC._sig=h.signature;
     render(); renderSyncChip();
+    /* `render()` تبني شاشات الطاقم وحدها ⇒ بلا هذين السطرين يبقى جناح
+       التلميذة/الوليّ **جامدًا** على صورة لحظة الدخول مهما تغيّر على الخادم. */
+    if(currentRole==="parent") renderParentWing();
+    if(currentRole==="student") renderStudentWing();
   }
 }
 

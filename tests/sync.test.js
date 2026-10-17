@@ -98,6 +98,11 @@ function makeSandbox({ students = [], notes = [], complaints = [], online = true
        مفتاحُها من الاختبار بلا أن يعلن سببه. */
     NOTES: notes, complaints, HOMEWORK: [], SUMMONS: [],
     nextId: 1, teachers: [], gateLog: [], notifs: [],
+    /* `currentRole` تسكن منطقة الواجهة **خارج** النصّ المستخرَج، وهي ليست
+       `let` في هذا النطاق ⇒ بلا تعريفها هنا يرمي `hydrate()` مرجعًا
+       (ReferenceError) فيُبتلع في catch ويُعلن {ok:false} — فيسقط جناح
+       الجلب كلّه بلا سبب ظاهر. والقيمة الافتراضية دورُ الطاقم. */
+    currentRole: "director",
   };
   sandbox.window = {
     addEventListener: () => {},
@@ -519,6 +524,60 @@ async function main() {
       eq(absRow.state, "absent", "صفّ الغياب يحمل absent كما هو");
       eq(absRow.at_time, null, "وat_time null مقبول (عمود text — لا 23502)");
       eq(s3.T.ATT_STATE_DB.absent, "absent", "و«absent» في خريطة العميل ⇒ لا تُقلَب إلى present");
+    }
+
+    /* ── رقم الهاتف: كتابةٌ واحدة لا ثلاث ────────────────────────────────
+       `toEmail` تقلب كل ما ليس `[a-z0-9._-]` إلى شرطة، فـ`+213 555 12 34 56`
+       تصير بريدًا **آخر** غير الذي أُنشئ به الحساب ⇒ الأمّ تُمنع من الدخول
+       وحسابُها قائم، وتظنّ التطبيق معطوبًا. والقياس على الدالّة الحقيقية. */
+    {
+      const s4 = makeSandbox();
+      eq(s4.T.toEmail("+213555123456"), "0555123456@eduvia.local", "+213 ← الصيغة الموحَّدة");
+      eq(s4.T.toEmail("00213 555 12 34 56"), "0555123456@eduvia.local", "00213 وبمسافات ← نفسها");
+      eq(s4.T.toEmail("0555-12-34-56"), "0555123456@eduvia.local", "وبشرطات ← نفسها");
+      eq(s4.T.toEmail("RF-0001"), "rf-0001@eduvia.local", "ولا تمسّ بطاقة التلميذة (ليست رقم هاتف)");
+      eq(s4.T.toEmail("RF-T001"), "rf-t001@eduvia.local", "ولا معرّف الطاقم");
+    }
+
+    /* ── صفّ الإشعار: كان يسقط على default فيُرسل الرقم المحلّي إلى uuid ──
+       `notifications` مسجَّل في INSERT_ONLY بلا حالةٍ في rowFor ⇒ `default`
+       يُعيد الكائن كما هو، و`student_id` فيه رقمٌ محلّي وعموده uuid على
+       الخادم. فلا يصل التنبيه أبدًا — وهي **القناة الوحيدة بلا مزوّد**. */
+    {
+      const s5 = makeSandbox({ mode: "remote",
+        students: [{ id: 1, cloudId: "a1", name: "مريم بن علي" }] });
+      const row = s5.T.rowFor("notifications",
+        { student_id: 1, kind: "absence", body: "لم تحضر ابنتكم اليوم", at_time: "08:30" });
+      truthy(row, "الإشعار يُبنى لتلميذةٍ لها uuid");
+      eq(row.student_id, "a1", "وstudent_id يمرّ على sidOrNull ⇒ uuid لا رقمًا محلّيًّا");
+      eq(row.kind, "absence", "ونوعه كما هو");
+      eq(row.at_time, "08:30", "ووقته كما هو");
+      eq(s5.T.rowFor("notifications", { student_id: 99, body: "x" }), null,
+        "وتلميذةٌ بلا uuid على الخادم: لا نُرسل صفًّا نعرف أنّه سيُردّ");
+    }
+
+    /* ── وليٌّ لا ابنتَ له في السجلّ: لا تُعرَض تلميذاتُ التجربة ───────────
+       الخادم يُعيد صفرًا بلا خطأ (`my_student_ids()` فارغة)، وكانت المصفوفة
+       المحلّية تبقى مكانها فيرى **بنات غيرِه** على أنّهنّ ابنته. */
+    {
+      const s6 = makeSandbox({ mode: "remote",
+        students: [{ id: 1, name: "مريم بن علي", cls: "1أ", state: "present" }] });
+      s6.sandbox.currentRole = "parent";
+      s6.T.SYNC.client = fakeServer({ __cols: DATA.__cols, students: [] });
+      const r6 = await s6.T.hydrate();
+      truthy(r6.ok, "صفرُ تلميذةٍ ليس خطأً في الجلب");
+      eq(s6.sandbox.students.length, 0, "وليّ بلا صفٍّ في guardians ⇒ لا تُعرَض بيانات غيرِ ابنته");
+      eq(s6.T.SYNC.unlinked, true, "والحالة مُعلَنة (تُعرَض «لا تلميذة مرتبطة بهذا الحساب»)");
+    }
+
+    /* ── والتصفير محصورٌ بمن يلزمه: لا يُصفَّر طاقمٌ لمدرسته تلاميذُ بعد ── */
+    {
+      const s7 = makeSandbox({ mode: "remote", students: [{ id: 1, name: "مريم" }] });
+      s7.sandbox.currentRole = "director";
+      s7.T.SYNC.client = fakeServer({ __cols: DATA.__cols, students: [] });
+      await s7.T.hydrate();
+      eq(s7.sandbox.students.length, 1, "مديرة: لا تُصفَّر مصفوفتها (الحراسة على وليّ/تلميذة وحدها)");
+      eq(s7.T.SYNC.unlinked, false, "ولا تُعلَن «غير مرتبطة» لدورٍ لا تعنيه");
     }
   }
   {

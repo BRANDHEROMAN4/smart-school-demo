@@ -16,7 +16,8 @@
  *  ⚠️ مفتاح service_role **يتجاوز كل سياسات RLS**. لا تضعْه أبدًا في ملف
  *     HTML ولا في متغيّر يبدأ بـ VITE_/NEXT_PUBLIC_. استعمله على جهازك فقط.
  *
- *  المخرَج: roster.csv — كشف البطاقات والأرقام السرّية لتوزيعه على التلميذات.
+ *  المخرَج: roster.csv — كشف البطاقات والأرقام السرّية لتوزيعه على التلميذات
+ *  وأولياء أمورهنّ (الوليّ يدخل برقم هاتفه لا ببطاقة).
  * ==========================================================================*/
 
 import { writeFileSync } from "node:fs";
@@ -31,10 +32,30 @@ const PIN_LEN = 6;
 const randomPin = () =>
   Array.from({ length: PIN_LEN }, () => Math.floor(Math.random() * 10)).join("");
 
-/* "RF-0001" → "rf-0001@eduvia.local" — بريد اصطناعي لا يُرسَل إليه أبدًا،
-   لكنه يسمح لـSupabase Auth أن يعمل بأصالته بلا مزوّد بريد. */
+/* رقم الهاتف — صيغةٌ واحدة لكل الكتابات.
+   بلا توحيد: `0555123456` و`+213555123456` و`0555 12 34 56` تُنتج ثلاثة
+   معرفاتٍ متمايزة ⇒ الأمّ تكتب رقمها بطريقتها فتُمنع من الدخول وحسابُها قائم.
+   ويُطبَّق **عند الإنشاء وعند الدخول معًا**. نسخةٌ مطابقة في الملفّ الآخر،
+   وحارسٌ ساكن في tests/static.test.js يقابلهما نصًّا كي لا تفترقا. */
+function canonPhone(v){
+  const raw=String(v==null?"":v).trim();
+  let d=raw.replace(/\D/g,"");
+  if(/^00213/.test(d)) d=d.slice(5);
+  else if(/^213/.test(d)) d=d.slice(3);
+  d=d.replace(/^0+/,"");
+  if(!/^\d{9}$/.test(d)) return raw;   /* ليس جوّالًا ⇒ يُترك كما هو */
+  return "0"+d;
+}
+/* "RF-0001" → "rf-0001@eduvia.local"  |  "0555123456" → "0555123456@eduvia.local"
+   بريد اصطناعي لا يُرسَل إليه أبدًا، لكنه يسمح لـSupabase Auth أن يعمل
+   بأصالته بلا مزوّد بريد. */
 export const toEmail = (loginId) =>
-  `${String(loginId).trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-")}@eduvia.local`;
+  `${canonPhone(loginId).toLowerCase().replace(/[^a-z0-9._-]/g, "-")}@eduvia.local`;
+
+/* رمزٌ يُطبع في الكشف. وحسابٌ **موجود سلفًا** يحتفظ برمزه القديم — فنقولها
+   بدل طبع رقمٍ جديد لا يعمل، وإلّا وُزِّع رمزٌ كاذب على تلميذة. */
+const PIN_COL = (created, pin) =>
+  created ? pin : "— (حساب موجود · الرمز السابق هو النافذ)";
 
 /* ------------------------------------------------------------------ HTTP */
 async function api(path, { method = "GET", body, headers = {} } = {}) {
@@ -123,7 +144,7 @@ async function main() {
           display_name: s.full_name, login_id: s.card_no, student_id: s.id,
         });
       }
-      roster.push(["تلميذة", s.card_no, s.full_name, s.class_label, pin]);
+      roster.push(["تلميذة", s.card_no, s.full_name, s.class_label, PIN_COL(created, pin)]);
     } catch (e) {
       console.error(`  ✗ ${s.card_no} — ${e.message}`);
     }
@@ -151,9 +172,61 @@ async function main() {
           display_name: name, login_id: loginId,
         });
       }
-      roster.push(["طاقم", loginId, name, role, pin]);
+      roster.push(["طاقم", loginId, name, role, PIN_COL(created, pin)]);
     } catch (e) {
       console.error(`  ✗ ${loginId} — ${e.message}`);
+    }
+  }
+
+  /* ---------------------------------------------- حسابات الأولياء
+     مُعرِّف الدخول **رقم الهاتف** (لا بطاقة لهم)، والربط بابنتهم في جدول
+     `guardians` — و`profiles.student_id` تبقى فارغة للوليّ (تلك للتلميذة
+     وحدها، والوليّ قد يكون له أكثر من ابنة).
+     ويُجمَّع بالهاتف **الموحَّد**: أمٌّ لها ابنتان ⇒ حسابٌ واحد ورمزٌ واحد
+     وصفّان في `guardians` — وهذا سبب وجود جدول الوصل لا عمودٍ في التلميذة. */
+  const byPhone = new Map();
+  for (const s of students) {
+    const phone = canonPhone(s.parent_phone);
+    if (!/^0\d{9}$/.test(phone)) continue;   /* بلا رقم جوّال صحيح لا حساب */
+    if (!byPhone.has(phone)) byPhone.set(phone, { phone, children: [] });
+    byPhone.get(phone).children.push(s);
+  }
+  const skipped = students.length
+    ? [...new Set(students.map(s => canonPhone(s.parent_phone)))]
+        .filter(p => !/^0\d{9}$/.test(p)).length
+    : 0;
+  console.log(`▸ الأولياء (أرقام جوّال مميّزة): ${byPhone.size}` +
+    (skipped ? ` · \x1b[33m${skipped} رقمًا غير صالح تُخطّي\x1b[0m` : ""));
+
+  for (const { phone, children } of byPhone.values()) {
+    const pin = randomPin();
+    const who = children[0].parent_name || ("وليّ " + children[0].full_name);
+    try {
+      const { id, created } = DRY
+        ? { id: "00000000-0000-0000-0000-000000000000", created: true }
+        : await createUser(phone, pin, { role: "parent", name: who });
+      created ? made++ : reused++;
+      if (!DRY) {
+        await upsertProfile({
+          id, school_id: school.id, role: "parent",
+          display_name: who, login_id: phone,
+          /* student_id تبقى null: الربط في guardians لا في الملفّ. */
+        });
+        for (const c of children) {
+          const r = await api("/rest/v1/guardians?on_conflict=profile_id,student_id", {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: { profile_id: id, student_id: c.id, relation: "parent" },
+          });
+          if (!r.ok)
+            throw new Error(`فشل ربط ${phone} بـ${c.card_no}: ${r.status} ${r.text.slice(0, 120)}`);
+        }
+      }
+      roster.push(["وليّ أمر", phone, who,
+                   children.map((c) => c.full_name + " (" + c.class_label + ")").join(" · "),
+                   PIN_COL(created, pin)]);
+    } catch (e) {
+      console.error(`  ✗ ${phone} — ${e.message}`);
     }
   }
 
