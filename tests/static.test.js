@@ -372,18 +372,23 @@ function main() {
     chk(!/class_label\s*:\s*picked|class_label\s*:\s*"الكل"/.test(HTML),
       "ولا يُبنى صفُّ واجب بقسمٍ مأخوذٍ من القائمة مباشرةً (يُوسَّع قبله)");
 
-    /* الحضور من شاشة البوابة: الشرط في الدالّتين معًا. */
-    const scan = body("simulateScan") || "";
+    /* الحضور من شاشة البوابة: الشرط في مسار التسجيل الواحد وفي التحضير اليدويّ.
+       ونقلتُ منطق العبور من simulateScan إلى recordCrossing كي تمرّ المسارات
+       الثلاثة (كاميرا · رقم · محاكاة) من نقطةٍ واحدة — فالقياس على الموضع الجديد،
+       وإلّا صار الاختبار يقيس دالّةً لم يبقَ فيها المنطق. */
+    const cross = body("recordCrossing") || "";
     const man = body("markPresent") || "";
-    chk(/canRecord\s*\(currentRole\)/.test(scan),
-      "الإرسال من «محاكاة عبور» مشروطٌ بـcanRecord");
+    chk(/canRecord\s*\(currentRole\)/.test(cross),
+      "الإرسال من مسار العبور مشروطٌ بـcanRecord");
     chk(/canRecord\s*\(currentRole\)/.test(man),
       "والإرسال من «تحضير يدوي» مشروطٌ به كذلك");
     chk(countWord("canRecord") >= 3,
       "وcanRecord مُستعملة فعلًا (تعريفٌ بلا نداء لا يحمي شيئًا)");
     /* الطرف الآخر: أثر العبور لا يُشترط به الدور — الأمانة لها `gate_write`. */
-    chk(/enqueue\("gate_log"/.test(scan) && !/canRecord\(currentRole\)[\s\S]{0,80}enqueue\("gate_log"/.test(scan),
+    chk(/enqueue\("gate_log"/.test(cross) && !/canRecord\(currentRole\)[\s\S]{0,80}enqueue\("gate_log"/.test(cross),
       "وسجلّ البوابة يُرسَل بلا شرط دور (الأمانة تكتبه على الخادم)");
+    chk(/recordCrossing\(pick\(cand\)\)/.test(body("simulateScan") || ""),
+      "والمحاكاة تفوّض إلى recordCrossing (لا نسخة ثانية من القواعد)");
   }
 
   /* ------------------------------ ⑩ الحضور لا يقول ما لم يقع -----------------
@@ -636,6 +641,59 @@ function main() {
     const policies = liveSQL.split(/create policy/).slice(1);
     chk(policies.length >= 2 && policies.every((c) => !/paid_until/.test(c)),
       "ولا سياسةَ حجبٍ بمهلة الدفع (paid_until لا يرد في أيّ create policy) — إخفاء غياب طفلة عن أمّها يضرّ الطفل");
+  }
+
+  /* ------------------------- ⑬ البراسليّ يعمل: قارئٌ يقرأ، وملصقٌ يُطبع -------------
+     القرار محسوم: **بطاقة لا بصمة**، والشكل براسليّ + QR. لكن التطبيق كان
+     بلا أيّ قارئ: زرُّ «محاكاة» وحده، يختار تلميذةً **عشوائيًّا** ويكتب عبورها —
+     وفي الوضع الموصول كان يكتب تلميذةً عشوائية في سجلّ البوابة الحقيقيّ.
+     فالبراسليّ كان زينةً، والمحاكاة خطرًا. */
+  console.log("\n▸ البراسليّ: قارئٌ حقيقيّ، وملصقٌ يُطبع، ومحاكاةٌ لا تكتب عشوائيًّا");
+  {
+    const extractFn = (name) => {
+      const i = HTML.indexOf(`function ${name}(`);
+      if (i < 0) return null;
+      const j = HTML.indexOf("\n}", i);
+      return j < 0 ? null : HTML.slice(i, j + 2);
+    };
+    let C = null;
+    try { const src = extractFn("cardFromPayload"); if (src) C = eval("(" + src + ")"); }
+    catch (e) { C = null; }
+    chk(!!C, "cardFromPayload معرَّفة (مُستخرَجة كما هي من الملفّ)");
+    if (C) {
+      chk(C("RF-0001") === "RF-0001", "رقم البطاقة يمرّ كما هو");
+      chk(C("   rf-25  ") === "RF-0025", "ويُطبَّع: حالة الأحرف · الفراغات · نقص الأصفار");
+      chk(C("RF0010") === "RF-0010", "ويُقبَل بلا شرطة");
+      chk(C("https://x.app/p?card=rf-0007") === "RF-0007", "والرابط يُقرأ منه card= لا الرابط كلّه");
+      chk(C("https://x.app/RF-0003") === "RF-0003", "أو آخر مقطع من المسار");
+      chk(C("مرحبا") === null && C("") === null && C(null) === null,
+        "وما ليس بطاقةً يُرفَض — لا تخمين أقرب تلميذة");
+    }
+    for (const f of ["recordCrossing", "recordByCard", "recordCardInput",
+                     "openScanner", "closeScanner", "scannerSupported", "printBraceletLabels"]) {
+      chk(new RegExp(`function\\s+${f}\\s*\\(`).test(HTML), `${f} معرَّفة`);
+    }
+    /* المسارات كلها تمرّ من نقطةٍ واحدة — وإلّا اختلفت قواعدها. */
+    chk(/function recordByCard[\s\S]*?return recordCrossing\(st\)/.test(HTML),
+      "إدخال الرقم يمرّ من recordCrossing (قواعد واحدة لا نسختان)");
+    chk(/function simulateScan[\s\S]*?recordCrossing\(pick\(cand\)\)/.test(HTML),
+      "والمحاكاة تمرّ منه كذلك");
+    chk(/recordByCard\(card\)/.test(HTML), "والكاميرا تنتهي إلى recordByCard");
+    /* المحاكاة لا تظهر في الوضع الموصول: كانت تكتب تلميذةً عشوائية في الخادم. */
+    chk(/demoScanBtn/.test(HTML) && /db\.style\.display=remote\?"none":""/.test(HTML),
+      "والمحاكاة تُخفى في الوضع الموصول (كانت تكتب عشوائيًّا على الخادم الحقيقيّ)");
+    /* البوابة: كاميرا + إدخال يدويّ (احتياط البراسليّ التالف). */
+    chk(/onclick="openScanner\(\)"/.test(HTML) && /id="cardInput"/.test(HTML) &&
+        /onclick="recordCardInput\(\)"/.test(HTML),
+      "والبوابة فيها مسحٌ بالكاميرا وإدخالٌ يدويّ للرقم");
+    /* الملصق: QR بالرقم + الرقم مطبوعًا + بلا اسم. */
+    chk(/function printBraceletLabels[\s\S]*?qrSVG\(card,132\)/.test(HTML),
+      "ملصق البراسليّ يولّد QR من رقم البطاقة");
+    chk(/onclick="printBraceletLabels\(\)"/.test(HTML),
+      "وله زرٌّ في صفحة البطاقات");
+    const lbl = extractFn("printBraceletLabels") || "";
+    chk(!!lbl && !/s\.name/.test(lbl),
+      "ولا يُطبع اسم التلميذة على البراسليّ (فلا يُعرَف صاحبه إن ضاع)");
   }
 
   /* ------------------------------------------------------------ الحصيلة */

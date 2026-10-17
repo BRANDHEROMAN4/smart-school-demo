@@ -470,6 +470,9 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     <div class="panel">
       <h2>🪪 إدارة البطاقات (RFID)</h2>
       <div class="cards" id="cardKpi" style="grid-template-columns:repeat(3,1fr)"></div>
+      <div class="actions" style="margin-bottom:10px">
+        <button class="btn primary" onclick="printBraceletLabels()">🖨️ طباعة ملصقات البراسليّات (QR)</button>
+      </div>
       <input class="search" placeholder="🔎 ابحث برقم البطاقة أو اسم التلميذة..." onkeyup="filterTable(this,'cardTable')">
       <div style="max-height:52vh;overflow:auto">
         <table id="cardTable"><thead><tr><th>التلميذة</th><th>رقم البطاقة</th><th>القسم</th><th>الحالة</th></tr></thead><tbody></tbody></table>
@@ -500,13 +503,29 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
   <!-- Gate -->
   <section id="gate" class="page hidden">
     <div class="hero">
-      <div class="htxt"><b>🚪 بوابة المؤسسة — المدخل الرئيسي</b><p>محاكاة قارئ البطاقات عند المدخل الوحيد.</p></div>
-      <button class="scan-btn" onclick="simulateScan()"><span class="rf">📶</span> محاكاة مسح بطاقة</button>
+      <div class="htxt"><b>🚪 بوابة المؤسسة — المدخل الرئيسي</b><p>امسحي براسليّ التلميذة بكاميرا الهاتف، أو أدخلي رقم بطاقتها يدويًّا.</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="scan-btn" onclick="openScanner()"><span class="rf">📷</span> مسح بالكاميرا</button>
+        <button class="scan-btn" id="demoScanBtn" onclick="simulateScan()"><span class="rf">📶</span> محاكاة (عرض تجريبي)</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>⌨️ إدخال رقم البطاقة</h2>
+      <div class="actions" style="gap:8px;flex-wrap:wrap">
+        <input id="cardInput" class="search" style="flex:1;min-width:200px;margin:0;direction:ltr;text-align:center;letter-spacing:2px;font-family:Consolas,monospace" placeholder="RF-0001" aria-label="رقم البطاقة" onkeydown="if(event.key==='Enter')recordCardInput()">
+        <button class="btn primary" onclick="recordCardInput()">تسجيل العبور</button>
+      </div>
+      <div class="muted" style="margin-top:8px">الاحتياط حين يتلف البراسليّ أو لا تعمل الكاميرا — والرقم مطبوعٌ تحت الـQR دائمًا. <b>هذا الإدخال يسجّل عبورًا حقيقيًّا ويؤثّر في حضور اليوم.</b></div>
     </div>
     <div class="cards" id="gateKpi" style="grid-template-columns:repeat(4,1fr)"></div>
     <div class="panel">
       <h2>📜 سجلّ آخر العمليات</h2>
       <div id="gateLog"></div>
+    </div>
+    <div id="scanBox" style="display:none;position:fixed;inset:0;background:rgba(8,15,30,.94);z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px">
+      <div style="color:#fff;font-size:15px;font-weight:700;text-align:center">وجّهي الكاميرا إلى رمز QR على براسليّ التلميذة</div>
+      <video id="scanVideo" playsinline muted style="width:min(92vw,520px);border-radius:16px;background:#000"></video>
+      <button class="btn" onclick="closeScanner()">إلغاء</button>
     </div>
   </section>
 
@@ -1022,6 +1041,11 @@ function renderSystemStatus(){
   set("sysSync", remote?(SYNC.online?"تعمل":"متوقّفة (بلا شبكة)"):"لا مزامنة (وضع محلي)",
       remote?(SYNC.online?"ok":"late"):"pend");
   set("sysNet", SYNC.online?"متّصلة":"منقطعة", SYNC.online?"ok":"abs");
+  /* المحاكاة تختار تلميذةً **عشوائيًّا** وتكتب عبورها. في الوضع الموصول كانت
+     تكتب تلميذةً عشوائية في سجلّ البوابة الحقيقيّ ⇒ تُخفى هناك ولا تبقى إلّا
+     في العرض المحلّي المُعلَن. */
+  const db=document.getElementById("demoScanBtn");
+  if(db) db.style.display=remote?"none":"";
 }
 function render(){
   const s=stats();
@@ -1174,11 +1198,33 @@ let unread=0;
 function updateBell(){const b=document.getElementById("bell");if(unread>0){b.textContent=unread;b.classList.remove("hidden");}else b.classList.add("hidden");}
 
 /* ================= التفاعلات ================= */
-function simulateScan(){
-  let cand=students.filter(s=>s.state==="pending");
-  if(!cand.length) cand=students.filter(s=>s.state==="absent"); // بعد نفاد المنتظرات، أدخِل غائبة
-  if(!cand.length){toast("البوابة","جميع التلميذات دخلن اليوم ✅","g");return;}
-  const st=pick(cand);
+/* ================= قارئ البطاقات =================
+   البراسليّ لا قيمة له إن لم يقرأه شيء. كان في الصفحة زرُّ «محاكاة» فقط:
+   يختار تلميذةً **عشوائيًّا** ويكتب عبورها — وفي الوضع الموصول كان يكتب
+   تلميذةً عشوائية في سجلّ البوابة الحقيقيّ. الآن ثلاثة مسارات، كلّها تمرّ
+   من `recordCrossing`: كاميرا تقرأ QR · إدخال الرقم يدويًّا · والمحاكاة
+   التي لا تظهر إلّا في الوضع المحلّي. */
+
+/* الحمولة قد تكون رقم البطاقة وحده (وهو ما تُطبع به البراسليّات) أو رابطًا
+   يحمل card=… — فنستخرج الرقم لا الرابط كلّه. دالّة صافية كي تُقاس. */
+function cardFromPayload(raw){
+  let s=String(raw==null?"":raw).trim();
+  if(!s) return null;
+  if(/^https?:\/\//i.test(s)){
+    try{
+      const u=new URL(s);
+      s=u.searchParams.get("card")||u.searchParams.get("rf")||
+        decodeURIComponent((u.pathname.split("/").filter(Boolean).pop())||"");
+    }catch(e){ return null; }
+  }
+  s=s.trim().toUpperCase().replace(/\s+/g,"");
+  const m=/^RF-?(\d{1,6})$/.exec(s);
+  return m?("RF-"+m[1].padStart(4,"0")):null;
+}
+
+/* تسجيل عبورٍ واحد — المسارات الثلاثة تمرّ من هنا فلا تختلف قواعدها. */
+function recordCrossing(st){
+  if(!st) return false;
   const t=new Date();
   const hm=pad(t.getHours())+":"+pad(t.getMinutes());
   const isLate=(t.getHours()>8)||(t.getHours()===8&&t.getMinutes()>15);
@@ -1186,9 +1232,7 @@ function simulateScan(){
   gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate});
   /* العبور يُسجَّل مرّتين، وهما ليسا تكرارًا بل **دقّة مختلفة**:
      `attendance` صفٌّ واحد لليوم (حالة التلميذة اليوم)، و`gate_log` أثرُ كلّ
-     عبور على حِدة (وقد تعبر مرّتين، وتتأخّر). أمّا الحضور فلم يكن يُرسَل من
-     هذه الشاشة أصلًا — فكان العبور في البوابة **مسرحية محلّية**: يتحرّك على
-     الشاشة ولا يعلم به الخادم. */
+     عبور على حِدة (وقد تعبر مرّتين، وتتأخّر). */
   enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day:todayISO(),late:isLate}));
   /* أثر العبور للجميع (الأمانة لها `gate_write`)؛ أمّا **حضور اليوم** فشأن من
      يملك `can_record` — والخادم يرفضه من الأمانة رفضًا مؤكّدًا. لا نُرسل ما نعلم
@@ -1199,7 +1243,76 @@ function simulateScan(){
   unread++;
   render();
   toast(isLate?"دخول متأخّر ⏰":"دخول ناجح 🟢",`${st.name} · ${st.cls} · ${hm}`, isLate?"y":"g");
-  setTimeout(()=>toast("📩 إشعار وليّ الأمر",`أُرسل إلى ${st.parent} عبر ${st.notify}: «دخلت ابنتكم ${st.name} المدرسة الساعة ${hm}».`,"b"),700);
+  return true;
+}
+
+/* رقمٌ مقروء ⇒ تلميذة ⇒ عبور. والبطاقة المجهولة **تُرفَض** ولا تُخمَّن. */
+function recordByCard(raw){
+  const card=cardFromPayload(raw);
+  if(!card){ toast("بطاقة غير مقروءة","الرمز لا يحمل رقم بطاقة صالحًا (مثل RF-0001).","a"); return false; }
+  const up=String(card).toUpperCase();
+  const st=students.find(s=>String(s.card||"").toUpperCase()===up);
+  if(!st){ toast("بطاقة مجهولة",`${card} لا تطابق تلميذةً في هذه المؤسسة.`,"a"); return false; }
+  return recordCrossing(st);
+}
+function recordCardInput(){
+  const el=document.getElementById("cardInput");
+  recordByCard((el&&el.value)||"");
+  if(el){ el.value=""; el.focus(); }
+}
+
+/* المحاكاة — عرضٌ تجريبيّ فقط: تختار عشوائيًّا. تُخفى في الوضع الموصول
+   (انظر renderSystemStatus) لأنّها كانت تكتب تلميذةً عشوائية في الخادم. */
+function simulateScan(){
+  let cand=students.filter(s=>s.state==="pending");
+  if(!cand.length) cand=students.filter(s=>s.state==="absent");
+  if(!cand.length){toast("البوابة","جميع التلميذات دخلن اليوم ✅","g");return;}
+  recordCrossing(pick(cand));
+}
+
+/* الكاميرا: BarcodeDetector الأصليّ (كروم/إيدج/أندرويد) — بلا مكتبةٍ خارجية:
+   لا طلبَ شبكةٍ إضافيّ، ولا ثِقلَ على هاتفٍ قديم. وإن لم يدعمها المتصفّح
+   قلناها بصراحة ودلّلنا على الإدخال اليدويّ بدل زرٍّ لا يفعل شيئًا. */
+let _scanStream=null,_scanTimer=null;
+function scannerSupported(){
+  return typeof window!=="undefined" && typeof window.BarcodeDetector==="function" &&
+         !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+}
+async function openScanner(){
+  if(!scannerSupported()){
+    toast("الكاميرا غير مدعومة هنا",
+      "افتحي الصفحة في Chrome على أندرويد، أو أدخلي رقم البطاقة يدويًّا — والرقم مطبوع تحت الـQR دائمًا.","a");
+    return;
+  }
+  const box=document.getElementById("scanBox"), v=document.getElementById("scanVideo");
+  if(!box||!v) return;
+  box.style.display="flex";
+  try{
+    const detector=new window.BarcodeDetector({formats:["qr_code","code_128"]});
+    _scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});
+    v.srcObject=_scanStream;
+    await v.play();
+    const tick=async()=>{
+      try{
+        const codes=await detector.detect(v);
+        if(codes&&codes.length){
+          const card=cardFromPayload(codes[0].rawValue||"");
+          if(card){ closeScanner(); recordByCard(card); return; }
+        }
+      }catch(e){ /* إطارٌ فشل لا يُسقط القارئ كلّه */ }
+      _scanTimer=setTimeout(tick,350);
+    };
+    tick();
+  }catch(e){
+    closeScanner();
+    toast("تعذّر فتح الكاميرا","اسمحي للمتصفّح باستعمال الكاميرا ثم أعيدي المحاولة.","a");
+  }
+}
+function closeScanner(){
+  if(_scanTimer){clearTimeout(_scanTimer);_scanTimer=null;}
+  if(_scanStream){ try{_scanStream.getTracks().forEach(tk=>tk.stop());}catch(e){} _scanStream=null; }
+  const box=document.getElementById("scanBox"); if(box) box.style.display="none";
+  const v=document.getElementById("scanVideo"); if(v) v.srcObject=null;
 }
 function markPresent(id){
   const st=students.find(s=>s.id===id);if(!st)return;
@@ -1978,6 +2091,36 @@ function printParentPoster(){
     </div>
     <div style="text-align:center;font-size:11px;color:#889;margin-top:12px">منظومة EDUVIA · التعليم الذكي لمستقبل أفضل — © 2026</div>
   </div>`;
+  document.body.classList.add("printing");
+  window.print();
+  setTimeout(()=>document.body.classList.remove("printing"),400);
+}
+/* ملصقات البراسليّات: QR يحمل **رقم البطاقة وحده** (وهو ما يقرؤه القارئ)،
+   والرقم مطبوعًا تحته، و**بلا اسم** — فإن ضاع البراسليّ لا يُعرَف صاحبه،
+   وهو الاحتياط إن تلف الرمز. وأربعةٌ في الصف تناسب براسليّ سيليكون عاديًّا. */
+function printBraceletLabels(){
+  const list=students.filter(s=>s.card&&String(s.card).trim());
+  if(!list.length){ toast("الملصقات","لا تلميذات لهنّ بطاقاتٌ بعد.","a"); return; }
+  const cells=list.map(s=>{
+    const card=String(s.card).toUpperCase();
+    let qr;
+    try{ qr=qrSVG(card,132); }
+    catch(e){ qr='<div style="font-size:11px;color:#a33">تعذّر توليد الرمز</div>'; }
+    return `<div style="border:1px dashed #c9d3e2;border-radius:12px;padding:8px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px;break-inside:avoid">
+      ${qr}
+      <div style="font-family:Consolas,monospace;font-size:13px;font-weight:800;letter-spacing:1.5px;direction:ltr">${esc(card)}</div>
+      <div style="font-size:10px;color:#556">${esc(s.cls)}</div>
+    </div>`;
+  }).join("");
+  document.getElementById("printArea").innerHTML=`
+    <div style="font-family:'Segoe UI',Tahoma,'Noto Kufi Arabic',Arial,sans-serif;color:#14203a;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+      <div style="text-align:center;margin-bottom:10px">
+        <b style="font-size:16px">ملصقات البراسليّات — ${esc(CURRENT_SCHOOL)}</b>
+        <div style="font-size:11px;color:#556;margin-top:3px">يُقصّ كل ملصق ويُثبَّت على براسليّ · <b>لا يُكتب الاسم</b> · يُقرأ بكاميرا الهاتف</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${cells}</div>
+      <div style="text-align:center;font-size:10px;color:#889;margin-top:12px">EDUVIA · ${esc(CURRENT_SCHOOL)} · ${list.length} ملصقًا</div>
+    </div>`;
   document.body.classList.add("printing");
   window.print();
   setTimeout(()=>document.body.classList.remove("printing"),400);
