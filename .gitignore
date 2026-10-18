@@ -5,8 +5,8 @@
 node_modules/
 
 # كشف البطاقات والأرقام السرّية — يولّده tools/provision.mjs
-# ⚠️ يحتوي أسرارًا: لا يُرفع أبدًا
-roster.csv
+# ⚠️ يحتوي أسرارًا: لا يُرفع أبدًا (يشمل نسخة الإنقاذ roster.rescue.csv)
+roster*.csv
 
 # مسودّات محلية
 *.tmp

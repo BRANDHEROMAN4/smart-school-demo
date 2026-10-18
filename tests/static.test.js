@@ -742,6 +742,17 @@ function main() {
       "provision يجلب parent_phone (بدونه تُتخطّى كل تلميذة ولا يُنشأ حساب وليّ)");
     chk(/parent_name/.test(provSelect),
       "ويجلب parent_name (اسم الوليّ الحقيقيّ لا «وليّ <التلميذة>»)");
+    /* الحرّاس تقيس الكود لا النثر — التعليقات تذكر الأعلام نفسها. */
+    const PROV_CODE = PROVID.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    chk(/if\s*\(DRY\)\s*\{[\s\S]*?\}\s*else\s*\{[\s\S]*?writeFileSync\("roster\.csv"/.test(PROV_CODE),
+      "--dry لا يكتب roster.csv (كان يطمس الكشف الحقيقيّ برموز وهمية عند المعاينة)");
+    chk(/catch[\s\S]{0,400}?roster\.rescue\.csv/.test(PROV_CODE),
+      "وإذا كان roster.csv مقفلًا (Excel) تُحفظ الرموز في roster.rescue.csv بدل ضياعها");
+    chk(/process\.argv\.includes\("--reset-pins"\)/.test(PROV_CODE) &&
+        /method:\s*"PUT"[\s\S]{0,120}?password:\s*pin/.test(PROV_CODE),
+      "--reset-pins يجدد رمز الحساب القائم (إنقاذ بعد فشل كتابة الكشف)");
+    chk(/process\.argv\.indexOf\("--parent"\)/.test(PROV_CODE) && /ONLY_PARENT/.test(PROV_CODE),
+      "--parent يحصر إنشاء الأولياء في رقم واحد (لا حسابات لأرقام البذرة الصوريّة)");
   }
 
   /* ------------------------------------------------------------ الحصيلة */

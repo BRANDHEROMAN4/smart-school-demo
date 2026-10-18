@@ -11,7 +11,10 @@
  *    export SUPABASE_URL="https://xxxx.supabase.co"
  *    export SUPABASE_SERVICE_ROLE_KEY="eyJhbGci..."
  *    node tools/provision.mjs                 # كل التلاميذ + طاقم تجريبي
- *    node tools/provision.mjs --dry           # عرض بلا إنشاء
+ *    node tools/provision.mjs --dry           # عرض بلا إنشاء ولا كتابة
+ *    node tools/provision.mjs --parent 0555123456   # وليّ واحد فقط
+ *    node tools/provision.mjs --reset-pins    # رمز جديد لكل حساب قائم
+ *                                             # (لإنقاذ رموز ضاعت بعد فشل كتابة الكشف)
  *
  *  ⚠️ مفتاح service_role **يتجاوز كل سياسات RLS**. لا تضعْه أبدًا في ملف
  *     HTML ولا في متغيّر يبدأ بـ VITE_/NEXT_PUBLIC_. استعمله على جهازك فقط.
@@ -25,6 +28,13 @@ import { writeFileSync } from "node:fs";
 const URL_BASE = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const DRY = process.argv.includes("--dry");
+/* --reset-pins: الحساب قائم لكن رمزه غير معروف (ضاع لأن كتابة الكشف فشلت،
+   أو لأن الكشف القديم حُذف) ⇒ يُضبط رمز جديد ويُطبع في الكشف. بدونه
+   يُتجاهَل الحساب القائم ويُطبع «الرمز السابق هو النافذ» — وعدٌ باطل إن
+   لم يكن أحد يعرف ذلك الرمز. */
+const RESET = process.argv.includes("--reset-pins");
+const PARENT_ARG = process.argv.indexOf("--parent");
+const ONLY_PARENT = PARENT_ARG >= 0 ? canonPhone(process.argv[PARENT_ARG + 1] || "") : "";
 
 /* الرمز السري: ٦ أرقام — طويل بما يكفي لسياسة Supabase الافتراضية، وقصير
    بما يكفي لتلميذة في الابتدائي. */
@@ -88,7 +98,18 @@ async function createUser(loginId, pin, meta) {
     const list = await api(`/auth/v1/admin/users?page=1&per_page=1000`);
     if (list.ok && Array.isArray(list.json?.users)) {
       const found = list.json.users.find((u) => u.email === email);
-      if (found) return { id: found.id, created: false };
+      if (found) {
+        if (RESET) {
+          const u = await api(`/auth/v1/admin/users/${found.id}`, {
+            method: "PUT",
+            body: { password: pin },
+          });
+          if (!u.ok)
+            throw new Error(`فشل تجديد رمز ${loginId}: ${u.status} ${u.text.slice(0, 160)}`);
+          return { id: found.id, created: true };
+        }
+        return { id: found.id, created: false };
+      }
     }
   }
   throw new Error(`فشل إنشاء ${email}: ${r.status} ${r.text.slice(0, 160)}`);
@@ -108,6 +129,10 @@ async function main() {
   if (!URL_BASE || !KEY) {
     console.error("✖ ينقص SUPABASE_URL أو SUPABASE_SERVICE_ROLE_KEY.\n" +
                   "  راجِع SUPABASE-SETUP.md — الخطوة ٤.");
+    process.exit(2);
+  }
+  if (PARENT_ARG >= 0 && !/^0\d{9}$/.test(ONLY_PARENT)) {
+    console.error("✖ --parent يحتاج رقم جوّال صحيحًا، مثل: --parent 0555123456");
     process.exit(2);
   }
   console.log(`\n\x1b[1mEDUVIA — إنشاء الحسابات\x1b[0m  ${DRY ? "\x1b[33m[عرض فقط]\x1b[0m" : ""}\n`);
@@ -199,10 +224,18 @@ async function main() {
     ? [...new Set(students.map(s => canonPhone(s.parent_phone)))]
         .filter(p => !/^0\d{9}$/.test(p)).length
     : 0;
+  const parentList = [...byPhone.values()].filter(
+    (p) => !ONLY_PARENT || p.phone === ONLY_PARENT
+  );
+  if (PARENT_ARG >= 0 && parentList.length === 0) {
+    console.error(`✖ لا تلميذة مرتبطة بالرقم ${ONLY_PARENT} في parent_phone.`);
+    process.exit(1);
+  }
   console.log(`▸ الأولياء (أرقام جوّال مميّزة): ${byPhone.size}` +
-    (skipped ? ` · \x1b[33m${skipped} رقمًا غير صالح تُخطّي\x1b[0m` : ""));
+    (skipped ? ` · \x1b[33m${skipped} رقمًا غير صالح تُخطّي\x1b[0m` : "") +
+    (ONLY_PARENT ? ` · \x1b[33mوليّ واحد فقط: ${ONLY_PARENT}\x1b[0m` : ""));
 
-  for (const { phone, children } of byPhone.values()) {
+  for (const { phone, children } of parentList) {
     const pin = randomPin();
     const who = children[0].parent_name || ("وليّ " + children[0].full_name);
     try {
@@ -234,12 +267,31 @@ async function main() {
     }
   }
 
-  /* ---------------------------------------------- كشف البطاقات */
+  /* ---------------------------------------------- كشف البطاقات
+     ⚠️ لا يُكتب في وضع --dry: كان يكتب كشفًا بأرقام وهمية فوق الكشف الحقيقي،
+     فيضيع رمز التوزيع بمجرّد «معاينة».
+     وإن كان الملفّ مفتوحًا في Excel (EBUSY) نكتب نسخة إنقاذ بدلًا منه:
+     الرموز وُلِّدت الآن ولا تُخزَّن في أي مكان آخر — ضياعها يعني حسابات
+     قائمة برمزٍ لا يعرفه أحد. */
   const csv = "﻿" + roster.map((r) => r.map((c) => `"${c}"`).join(",")).join("\r\n");
-  writeFileSync("roster.csv", csv, "utf8");
+  if (DRY) {
+    console.log("\n✔ عرض فقط: لم تُنشأ حسابات ولم تُكتب roster.csv.");
+  } else {
+    try {
+      writeFileSync("roster.csv", csv, "utf8");
+      console.log("✔ الكشف في roster.csv — \x1b[33mوزّعه ثم احذفه\x1b[0m");
+    } catch (e) {
+      console.error(`\n\x1b[31m⚠️ تعذّر كتابة roster.csv (${e.code}) — غالبًا مفتوح في Excel. أغلقْه.\x1b[0m`);
+      try {
+        writeFileSync("roster.rescue.csv", csv, "utf8");
+        console.error("\x1b[33m   حفظتُ الرموز في roster.rescue.csv — انقله إلى مكان آمن واحذفه بعد الطبع.\x1b[0m");
+      } catch {
+        console.error("\x1b[31m   انسخ هذا الكشف الآن قبل إغلاق النافذة:\x1b[0m\n" + csv);
+      }
+    }
+  }
 
-  console.log(`\n✔ أُنشئ ${made} حسابًا · أُعيد استخدام ${reused}`);
-  console.log(`✔ الكشف في roster.csv — \x1b[33m${DRY ? "عرض فقط، بلا أرقام حقيقية" : "وزّعه ثم احذفه"}\x1b[0m`);
+  console.log(`\n✔ ${DRY ? "معاينة: " : ""}${made} حسابًا ${DRY ? "سيُنشأ" : "أُنشئ/جُدِّد"} · أُعيد استخدام ${reused}`);
   console.log(`\nملاحظة: الأرقام السرّية مُولَّدة عشوائيًا ولا تُخزَّن عندنا.
 احتفظ بـroster.csv في مكان آمن ثم احذفه بعد طبع البطاقات.\n`);
 }
