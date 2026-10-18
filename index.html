@@ -188,6 +188,8 @@ svg .ptlbl{fill:var(--text);font-size:11px;font-weight:700}
 .avatar.lg{width:64px;height:64px;font-size:22px}
 .namebtn{background:none;border:0;color:var(--primary);font-weight:700;cursor:pointer;font-family:inherit;font-size:13px;padding:0}
 .namebtn:hover{text-decoration:underline}
+.delbtn{background:none;border:0;cursor:pointer;font-size:13px;opacity:.55;padding:0 4px;vertical-align:middle}
+.delbtn:hover{opacity:1}
 .m-good{color:var(--present);font-weight:700}.m-ok{color:var(--late);font-weight:700}.m-low{color:var(--absent);font-weight:700}
 .rankcell{font-weight:800;color:var(--primary)}
 .tt{width:100%;border-collapse:separate;border-spacing:6px}
@@ -772,6 +774,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
   <label>المستوى</label>
   <select id="ns_grade"><option value="1">السنة الأولى</option><option value="2">السنة الثانية</option><option value="3">السنة الثالثة</option><option value="4">السنة الرابعة</option><option value="5">السنة الخامسة</option></select>
   <label>القسم</label><select id="ns_sec"><option>أ</option><option>ب</option></select>
+  <label>اسم وليّ الأمر</label><input id="ns_parent" placeholder="مثال: فاطمة بن ساسي">
   <label>هاتف وليّ الأمر</label><input id="ns_phone" placeholder="مثال: 05 55 12 34 56">
   <div class="mfoot"><button class="btn primary" onclick="addStudent()">حفظ</button><button class="btn" onclick="closeModal()">إلغاء</button></div>
 </div></div>
@@ -1066,7 +1069,7 @@ function render(){
   // Students
   document.getElementById("stCount").textContent=s.total+" تلميذة";
   document.querySelector("#stTable tbody").innerHTML=students.map(st=>
-    `<tr><td>${ltr(pad(st.id,4))}</td><td><button class="namebtn" onclick="openProfile(${st.id})">${st.name}</button></td><td>${st.grade}</td><td>${st.cls}</td><td>${ltr(st.card)}</td><td>${st.parent}</td><td>${pill(st.state)}</td></tr>`).join("");
+    `<tr><td>${ltr(pad(st.id,4))}</td><td><button class="namebtn" onclick="openProfile(${st.id})">${st.name}</button>${currentRole==="director"?`<button class="delbtn" title="حذف التلميذة" onclick="deleteStudent(${st.id})">🗑️</button>`:""}</td><td>${st.grade}</td><td>${st.cls}</td><td>${ltr(st.card)}</td><td>${esc(st.parent)}</td><td>${pill(st.state)}</td></tr>`).join("");
 
   // Classes
   const classes={};
@@ -1426,20 +1429,29 @@ function closeModal(){document.getElementById("modal").classList.add("hidden");}
 function addStudent(){
   const raw=(document.getElementById("ns_name").value||"").trim();
   const g=+document.getElementById("ns_grade").value, sec=document.getElementById("ns_sec").value;
-  const phone=(document.getElementById("ns_phone").value||"").replace(/[^0-9]/g,"")||genPhone();
+  /* الهاتف يُوحَّد هنا لا في الخادم: الواجهة تقبل +213/00213/المسافات،
+     والمخزَّن صيغةٌ واحدة هي نفسها التي يبني بها provision مُعرِّف الوليّ.
+     ولا رقم وهميّ عند الفراغ: كان genPhone() يختلق رقمًا فيُنشأ لاحقًا حساب
+     وليٍّ لا يعرفه أحد، ويبدو «نجاحًا» في الواجهة. */
+  const phone=canonPhone(document.getElementById("ns_phone").value||"");
+  if(!/^0\d{9}$/.test(phone)){
+    toast("رقم وليّ الأمر مطلوب","اكتب رقم جوّال صحيحًا (مثل 0555123456) — عليه يُبنى حساب الوليّ.","a");
+    return;
+  }
   const name=esc(raw)||("تلميذة جديدة "+nextId);
-  const st={id:nextId++,name,grade:g,sec,cls:g+sec,card:"RF-00"+(nextCard++),parent:"وليّ "+(raw||name),phone,notify:"SMS",state:"pending",time:null,cardState:"active"};
+  const pnameRaw=(document.getElementById("ns_parent").value||"").trim()||("وليّ "+(raw||name));
+  const st={id:nextId++,name,grade:g,sec,cls:g+sec,card:"RF-00"+(nextCard++),parent:pnameRaw,phone,notify:"SMS",state:"pending",time:null,cardState:"active"};
   assignAcademics(st); students.push(st);
   /* الإنشاء يذهب إلى الطابور أيضًا — وإلّا صارت التلميذة الجديدة جزيرةً:
      لا تصل إليها ملاحظة، ولا يتذكّرها أحد بعد إغلاق المتصفّح.
      uuid تُكتب لها لاحقًا من الخادم (إعادة جلب تلقائية بعد الإرسال). */
   const q=enqueue("students", rowFor("students",{
     card_no:st.card, full_name:raw||name, grade:g, section:sec, class_label:g+sec,
-    parent_name:"وليّ "+(raw||name), parent_phone:phone, notify_pref:"sms"
+    parent_name:pnameRaw, parent_phone:phone, notify_pref:"sms"
   }));
   if(q){ st.clientId=q.clientId; st.source="new"; }
   closeModal();render();toast("تمّت الإضافة ✅",`${name} · ${g}${sec}`,"g");
-  document.getElementById("ns_name").value="";document.getElementById("ns_phone").value="";
+  document.getElementById("ns_name").value="";document.getElementById("ns_parent").value="";document.getElementById("ns_phone").value="";
 }
 
 /* ================= التنقّل / المظهر / الأدوات ================= */
@@ -1928,11 +1940,12 @@ function openProfile(id){
         <div class="row"><span>البطاقة</span><b>${ltr(st.card)}</b></div>
         <div class="row"><span>حالة اليوم</span>${pill(st.state)}</div>
       </div>
-      <div class="pcard"><h4>👨‍👩‍👧 وليّ الأمر</h4>
-        <div class="row"><span>الاسم</span><b>${st.parent}</b></div>
+      <div class="pcard" id="pParentCard"><h4>👨‍👩‍👧 وليّ الأمر</h4>
+        <div class="row"><span>الاسم</span><b>${esc(st.parent)}</b></div>
         <div class="row"><span>الهاتف</span><b>${ltr(fmtPhone(st.phone))}</b></div>
         <div class="row"><span>وسيلة الإشعار</span><b>${st.notify}</b></div>
-        <button class="btn primary" style="margin-top:8px;width:100%" onclick="notifyParent(${st.id})">📩 إشعار الوليّ</button>
+        <button class="btn" style="margin-top:8px;width:100%" onclick="editParent(${st.id})" ${["director","supervisor","reception"].includes(currentRole)?"":"hidden"}>✏️ تعديل الاسم والهاتف</button>
+        <button class="btn primary" style="margin-top:6px;width:100%" onclick="notifyParent(${st.id})">📩 إشعار الوليّ</button>
       </div>
       <div class="pcard"><h4>🗓️ الحضور</h4>
         <div class="big blue">${pctTxt(st.attRate)}</div>
@@ -1951,6 +1964,59 @@ function openProfile(id){
   el.classList.remove("hidden");
 }
 function closeProfile(){document.getElementById("profile").classList.add("hidden");}
+/* تعديل بيانات وليّ الأمر — العمودان موجودان في `students` أصلًا
+   (parent_name/parent_phone)، وسياسة students_update تسمح للمديرة والناظرة
+   والأمانة. الحفظ يمرّ بالطابور كتعديلٍ على صفٍّ قائم (بـuuid) لا upsert. */
+function editParent(id){
+  const st=students.find(s=>s.id===id);if(!st)return;
+  const card=document.getElementById("pParentCard");if(!card)return;
+  card.innerHTML=`<h4>👨‍👩‍👧 وليّ الأمر — تعديل</h4>
+    <label>الاسم</label><input id="ep_name" value="${esc(st.parent)}">
+    <label>الهاتف</label><input id="ep_phone" value="${esc(st.phone)}" inputmode="tel" placeholder="0555123456">
+    <div class="mfoot"><button class="btn primary" onclick="saveParent(${st.id})">حفظ</button><button class="btn" onclick="openProfile(${st.id})">إلغاء</button></div>`;
+}
+function saveParent(id){
+  const st=students.find(s=>s.id===id);if(!st)return;
+  const nmRaw=(document.getElementById("ep_name").value||"").trim();
+  const ph=canonPhone(document.getElementById("ep_phone").value||"");
+  if(!nmRaw){toast("الاسم مطلوب","اكتب اسم وليّ الأمر.","a");return;}
+  if(!/^0\d{9}$/.test(ph)){toast("رقم غير صالح","اكتب رقم جوّال صحيحًا (مثل 0555123456).","a");return;}
+  /* ليست هناك حاجة لـrowFor: التعديل يرسل العمودين وحدهما، فلا يُعاد
+     تعيين notify_pref أو غيره إلى قيمة افتراضية بصمت. */
+  const match=st.cloudId?{id:st.cloudId}:(st.clientId?{client_id:st.clientId}:null);
+  st.parent=nmRaw;st.phone=ph;
+  if(match) enqueue("students",{parent_name:nmRaw,parent_phone:ph},{op:"update",match});
+  openProfile(id);render();
+  toast("حُفظ ✅","بيانات وليّ الأمر محدَّثة"+(match?" — وتُزامَن مع الخادم.":" (محلّيًّا)."),"g");
+}
+/* صفٌّ لم يصل الخادم بعد لا يُحذف هناك: يُلغى إدراجه من الطابور.
+   (وإلّا أُرسل الإدراج بعد الحذف فأعاد التلميذة التي حُذفت.) */
+function dropQueuedForStudent(st){
+  let removed=false;
+  QUEUE=QUEUE.filter(it=>{
+    if(it.table==="students"&&it.row&&st.clientId&&it.row.client_id===st.clientId){removed=true;return false;}
+    if(st.cloudId&&it.row&&it.row.student_id===st.cloudId){removed=true;return false;}
+    return true;
+  });
+  if(removed){saveQueue();renderSyncChip();}
+  return removed;
+}
+/* حذف تلميذة — للمديرة وحدها، وهي نفس سياسة students_delete في sql/002.
+   الحذف على الخادم يتتالى على سجلّها كلّه (كل مفاتيحها on delete cascade):
+   حضورها ونقاطها وملاحظاتها واستدعاءاتها وربط وليّها — فلا يُحذف صفٌّ ويبقى أثر. */
+function deleteStudent(id){
+  if(currentRole!=="director"){toast("صلاحية محدودة","حذف التلميذات للمديرة وحدها.","a");return;}
+  const st=students.find(s=>s.id===id);if(!st)return;
+  if(!confirm(`حذف ${st.name} (${st.cls}) نهائيًّا؟\n\nسيُحذف معها: حضورها ونقاطها وملاحظاتها واستدعاءاتها وربط حساب وليّها. لا رجعة.`))return;
+  const hadPending=dropQueuedForStudent(st);
+  const match=st.cloudId?{id:st.cloudId}:(!hadPending&&st.clientId?{client_id:st.clientId}:null);
+  if(match) enqueue("students",{},{op:"delete",match});
+  students=students.filter(s=>s.id!==id);
+  if(meStudent&&meStudent.id===id) meStudent=null;
+  closeProfile();render();
+  toast(match?"حُذفت التلميذة":"أُزيلت من هذا الجهاز",
+        match?"سيُنفَّذ الحذف على الخادم عند المزامنة.":"لم تصل الخادم بعد، فأُزيحت من الطابور.","a");
+}
 function notifyParent(id){const st=students.find(s=>s.id===id);notifs.unshift({time:nowHM(),type:"entry",text:`إشعار يدوي إلى ${st.parent} بخصوص التلميذة ${st.name}.`});unread++;updateBell();toast("📩 تمّ الإشعار",st.parent,"b");}
 function printReportCard(id){
   const st=students.find(s=>s.id===id);const term=0;const r=studentRank(st,term);
@@ -2751,7 +2817,12 @@ function enqueue(table,row,opts){
   const cid = row.client_id || newClientId();
   const item={clientId:cid,table,ts:new Date().toISOString(),tries:0};
 
-  if(opts.op==="update"){
+  if(opts.op==="delete"){
+    /* حذف صفٍّ قائم — بشرطٍ إلزاميّ كالتعديل: حذفٌ بلا شرط يمسّ **كل** صفّ
+       تسمح به RLS. والمطابقة بـuuid (أو client_id لصفٍّ لم يُجلب uuidه بعد). */
+    if(!opts.match||!Object.keys(opts.match).length) return null;
+    item.op="delete"; item.match=opts.match; item.row={};
+  }else if(opts.op==="update"){
     /* تعديل صفٍّ **قائم على الخادم** (اعتراض على ملاحظة من البذرة مثلًا):
        لا client_id هنا أصلًا، فالـupsert لا يجد ما يطابقه. نشترط المفتاح.
        وحارسٌ لا يُتجاوَز: تعديل **بلا شرط** يمسّ كل صفّ تسمح به RLS. */
@@ -3027,13 +3098,19 @@ async function flushQueue(){
      فيُسقَط صفٌّ سليم بلا ذنب — ننتظر الدخول بدل ذلك. */
   if(!SYNC.uid && !(await ensureUid())) return;
   _flushing=true;
-  let sawNewStudent=false, dropped=0;
+  let sawNewStudent=false, dropped=0, deniedDel=0;
   try{
     while(QUEUE.length){
       const it=QUEUE[0];
       let error=null, affected=null;
 
-      if(it.op==="update"){
+      if(it.op==="delete"){
+        /* .select("id") إلزاميّ: RLS على DELETE تُصفّر بصمت، فبلا إعادة الصفوف
+           يُعدّ الحذف «ناجحًا» وهو لم يمسّ أحدًا (نفس فخّ التعديل). */
+        let q=client.from(it.table).delete().select("id");
+        for(const k in (it.match||{})) q=q.eq(k,it.match[k]);
+        const r=await q; error=r.error; affected=(r.data||[]).length;
+      }else if(it.op==="update"){
         /* .select() إلزامي: بدونه لا نعرف كم صفًّا مُسّ فعلًا. */
         let q=client.from(it.table).update(it.row).select("id");
         for(const k in (it.match||{})) q=q.eq(k,it.match[k]);
@@ -3072,10 +3149,21 @@ async function flushQueue(){
       }
 
       /* صفر صفوف **ليس خطأً ظاهرًا**: RLS تُرشّح بصمت، فيبدو التعديل ناجحًا
-         وهو لم يمسّ شيئًا. نسجّله ونمضي — وإلّا بقي الطابور عالقًا أبدًا. */
-      if(it.op==="update" && affected===0){
-        SYNC.blocked=(SYNC.blocked||0)+1;
-        SYNC.lastBlocked={table:it.table,at:new Date(),row:it.row};
+         وهو لم يمسّ شيئًا. وفي الحذف قد يعني «حُذف سابقًا» (إعادة إرسال بعد
+         انقطاع) لا رفضًا — فنستوثق: هل الصفّ ما زال مرئيًّا؟ إن لا، فقد حُذف. */
+      if((it.op==="update"||it.op==="delete") && affected===0){
+        let stillThere=it.op==="update";
+        if(it.op==="delete"){
+          let chk=client.from(it.table).select("id");
+          for(const k in (it.match||{})) chk=chk.eq(k,it.match[k]);
+          const cr=await chk;
+          stillThere=!!cr.error||(cr.data||[]).length>0;
+        }
+        if(stillThere){
+          SYNC.blocked=(SYNC.blocked||0)+1;
+          SYNC.lastBlocked={table:it.table,at:new Date(),row:it.row};
+          if(it.op==="delete") deniedDel++;
+        }
         QUEUE.shift(); saveQueue(); continue;
       }
 
@@ -3089,6 +3177,11 @@ async function flushQueue(){
     /* صفٌّ لم يصل يُعلَن ولا يُسكَت عنه: «لم يُزامَن» أخطر ما يُخفيه صمتٌ. */
     if(dropped) toast("لم تصل "+dropped+" عملية ⚠️",
       "رفضها الخادم نهائيًّا. التفاصيل في تلميح مؤشّر المزامنة وسجلّ التدقيق.","a");
+    /* حذفٌ رفضه الخادم بصمت: الواجهة كانت ستُظهر التلميذة محذوفةً وهي قائمة.
+       نعيد الجلب فيعود الصفّ، ونقول السبب — لا نعد بالحذف ونحن لا نملكه. */
+    if(deniedDel) toast("الحذف لم يُطبَّق على الخادم ⚠️",
+      "أعاد الخادم صفرًا مع بقاء الصفّ. سيعود في القائمة بعد إعادة الجلب — راجع الصلاحية.","a");
+    if(deniedDel) setTimeout(()=>{ hydrate(); },400);
     /* تلميذة أُنشئت للتوّ لم يكن لها uuid — نُعيد الجلب لنلتقطه، فتصل
        الملاحظات اللاحقة إليها. بلا هذا تبقى التلميذة الجديدة معزولة. */
     if(sawNewStudent) setTimeout(()=>{ hydrate(); },600);

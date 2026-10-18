@@ -696,6 +696,54 @@ function main() {
       "ولا يُطبع اسم التلميذة على البراسليّ (فلا يُعرَف صاحبه إن ضاع)");
   }
 
+  /* ------------------- ⑭ حذف التلميذة واسم وليّها واستعلام الأولياء -------------
+     سُجّلت تلميذة مرّتين، ولم يكن في التطبيق زرّ حذف؛ وفي النموذج حقل هاتف
+     بلا اسم — والاسم يُخلق آليًّا «وليّ <اسم التلميذة>».
+     والأخطر: provision.mjs كان يستعلم بلا parent_phone ⇒ حلقة الأولياء تُتخطّى
+     الجميع بصمت ولا يُنشأ حساب وليّ واحد، والواجهة تقول إنّها فعلت. */
+  console.log("\n▸ حذف التلميذة، واسم وليّها، واستعلام الأولياء");
+  {
+    const fnBody = (name) => {
+      const i = HTML.indexOf(`function ${name}(`);
+      if (i < 0) return null;
+      const j = HTML.indexOf("\n}", i);
+      return j < 0 ? null : HTML.slice(i, j);
+    };
+    /* حقل الاسم: موجود، ومقروء فعلًا، ويُرسَل. */
+    chk(/id="ns_parent"/.test(HTML), "حقل «اسم وليّ الأمر» موجود في نموذج الإضافة");
+    const add = fnBody("addStudent") || "";
+    chk(/ns_parent/.test(add), "وaddStudent تقرأه (وإلّا بقي الحقل زينة)");
+    chk(/parent_name:pnameRaw/.test(add), "ويُرسَل إلى الخادم باسمه لا «وليّ <التلميذة>»");
+    chk(/canonPhone\(document\.getElementById\("ns_phone"\)/.test(add),
+      "والهاتف يُوحَّد قبل الحفظ (صيغة واحدة لحساب الوليّ)");
+    /* نقيس الكود لا الشرح: تعليقٌ يذكر genPhone() ليس نداءً لها. */
+    const addCode = add.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    chk(!/genPhone\(\)/.test(addCode),
+      "ولا رقم وهميّ عند الفراغ (كان ينشئ حساب وليٍّ لا يعرفه أحد)");
+    /* تعديل بيانات الوليّ — لا حذف وإعادة إضافة. */
+    for (const f of ["editParent", "saveParent", "deleteStudent", "dropQueuedForStudent"]) {
+      chk(!!fnBody(f), `${f} معرَّفة`);
+    }
+    chk(/pParentCard/.test(HTML) && /onclick="editParent\(\$\{st\.id\}\)"/.test(HTML),
+      "وملفّ التلميذة يعرض تعديل اسم الوليّ وهاتفه");
+    /* الحذف: زرٌّ للمديرة وحدها، وسياسة الخادم نفسها. */
+    chk(/currentRole==="director"\?`<button class="delbtn"/.test(HTML),
+      "زرّ الحذف يظهر للمديرة وحدها في القائمة");
+    const del = fnBody("deleteStudent") || "";
+    chk(/currentRole!=="director"/.test(del),
+      "والدالّة ترفض غير المديرة (حتى لو نوديت من console)");
+    chk(/op:"delete",match/.test(HTML), "والحذف يمرّ بالطابور بعملية delete صريحة");
+    chk(/it\.op==="delete"[\s\S]*?\.delete\(\)\.select\("id"\)/.test(HTML),
+      "وflushQueue تحذف بـ.select(id) — لأنّ RLS على DELETE تُصفّر بصمت");
+    /* العطل المؤكَّد: استعلام التلاميذ في provision بلا هاتف/اسم الوليّ. */
+    const PROVID = fs.readFileSync(path.join(ROOT, "tools/provision.mjs"), "utf8");
+    const provSelect = (PROVID.match(/students\?select=([^"`&]+)/) || [])[1] || "";
+    chk(/parent_phone/.test(provSelect),
+      "provision يجلب parent_phone (بدونه تُتخطّى كل تلميذة ولا يُنشأ حساب وليّ)");
+    chk(/parent_name/.test(provSelect),
+      "ويجلب parent_name (اسم الوليّ الحقيقيّ لا «وليّ <التلميذة>»)");
+  }
+
   /* ------------------------------------------------------------ الحصيلة */
   console.log("\n" + "─".repeat(64));
   console.log(`__EDUVIA_SUITE_DONE__ ok=${pass} fail=${failures.length}`);

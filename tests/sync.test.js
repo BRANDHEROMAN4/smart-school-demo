@@ -284,6 +284,58 @@ async function main() {
     eq(T.SYNC.lastBlocked.table, "behaviour_notes", "الجدول مُسجَّل للمراجعة");
   }
 
+  /* ------------------------------------------------ ٣ج. حذف صفٍّ قائم */
+  console.log("\n▸ حذف صفٍّ قائم (تلميذة سُجّلت خطأً)");
+  {
+    const { T } = makeSandbox({ mode: "remote" });
+    eq(T.enqueue("students", {}, { op: "delete", match: {} }), null,
+       "حذف بلا شرط يُرفض (وإلّا حُذف كل صفّ تسمح به RLS)");
+    const it = T.enqueue("students", {}, { op: "delete", match: { id: "s1" } });
+    eq(it.op, "delete", "النوع «حذف» لا upsert");
+    eq(it.match.id, "s1", "الصفّ المستهدف محفوظ");
+    eq(it.row, {}, "ولا صفّ يُرسَل — الحذف بالشرط وحده");
+  }
+  {
+    /* حذف ناجح: الخادم يعيد الصفّ المحذوف (وهذا هو إثبات أنه مُسّ فعلًا) */
+    const { T } = makeSandbox({ mode: "remote" });
+    T.SYNC.uid = "u1";
+    let deleted = false;
+    T.SYNC.client = { from: () => ({ delete: () => ({ select: () => ({
+      eq: (k, v) => { deleted = (k === "id" && v === "s1");
+                      return Promise.resolve({ data: [{ id: v }], error: null }); }
+    }) }) }) };
+    T.enqueue("students", {}, { op: "delete", match: { id: "s1" } });
+    await T.flushQueue();
+    eq(T.QUEUE.length, 0, "الحذف وصل ⇒ خرج من الطابور");
+    truthy(deleted, "والشرط هو uuid الصفّ لا غيره");
+  }
+  {
+    /* صفر صفوف + الصفّ ما زال مرئيًّا ⇒ رفضٌ صامت لا حذف */
+    const { T } = makeSandbox({ mode: "remote" });
+    T.SYNC.uid = "u1";
+    T.SYNC.client = { from: () => ({
+      delete: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }),
+      select: () => ({ eq: () => Promise.resolve({ data: [{ id: "s1" }], error: null }) }),
+    }) };
+    T.enqueue("students", {}, { op: "delete", match: { id: "s1" } });
+    await T.flushQueue();
+    eq(T.QUEUE.length, 0, "لا يبقى عالقًا في الطابور");
+    eq(T.SYNC.blocked, 1, "الصفّ ما زال قائمًا ⇒ يُحتسب رفضًا ويُعلَن");
+  }
+  {
+    /* صفر صفوف + الصفّ غير مرئيّ ⇒ حُذف سابقًا (إعادة إرسال بعد انقطاع) = نجاح */
+    const { T } = makeSandbox({ mode: "remote" });
+    T.SYNC.uid = "u1";
+    T.SYNC.client = { from: () => ({
+      delete: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }),
+      select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }),
+    }) };
+    T.enqueue("students", {}, { op: "delete", match: { id: "s1" } });
+    await T.flushQueue();
+    eq(T.QUEUE.length, 0, "خرج من الطابور");
+    eq(T.SYNC.blocked, 0, "ولا يُحتسب رفضًا — الحذف المكرّر ناجح لا خطأ");
+  }
+
   /* ------------------------------------------------ ٤. خريطة التحويل */
   console.log("\n▸ خريطة الواجهة ← القاعدة (العربية ← اللاتينية)");
   {

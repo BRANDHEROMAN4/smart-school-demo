@@ -174,6 +174,8 @@ async function main() {
   await testStudentLimits(db);
   console.log("\n▸ المعلّمة / المدير / الناظر / الأمانة");
   await testStaff(db);
+  console.log("\n▸ حذف التلميذة: للمديرة داخل مؤسستها وحدها");
+  await testDeleteStudent(db);
   console.log("\n▸ الولي: أبناؤه فقط");
   await testParent(db);
   console.log("\n▸ المفتّش والوصاية: قراءة بلا كتابة");
@@ -706,6 +708,26 @@ async function testStaff(db) {
       () => db.query(`insert into grades (school_id,student_id,subject,term,label,kind,mark)
                       values ($1,$2,'الرياضيات',1,'فرض 3','summative',8)`, [S.school, S.amina]),
       "الأمانة لا تكتب النقاط"
+    );
+  });
+}
+
+/* حذف التلميذة: زرُّ الواجهة ليس حكمًا — الخادم هو الحكم.
+   نكتب تلميذةً مؤقّتة كي لا يمسّ الحذف بيانات الاختبارات الأخرى،
+   ونثبت الوجهين: المديرة تحذف داخل مؤسستها، ولا تحذف خارجها. */
+async function testDeleteStudent(db) {
+  const tmp = "22222222-2222-2222-2222-2222222222aa";
+  await db.query(
+    `insert into students (id,school_id,card_no,full_name,grade,section,class_label)
+     values ($1,$2,'RF-TMP1','تلميذة للحذف',1,'أ','1أ')`,
+    [tmp, S.school]
+  );
+  await as(db, S.uDirector, async () => {
+    const r = await db.query(`delete from students where id=$1 returning id`, [tmp]);
+    eq(r.rowCount, 1, "المديرة تحذف تلميذة في مؤسستها (students_delete)");
+    await noWrite(
+      () => db.query(`delete from students where id=$1`, [S.outsider]),
+      "ولا تحذف تلميذة مؤسسة أخرى (RLS تصفّر ولا تُخطئ)"
     );
   });
 }

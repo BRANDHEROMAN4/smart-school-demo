@@ -122,7 +122,11 @@ async function main() {
   console.log(`▸ المؤسسة: ${school.name}`);
 
   // التلاميذ
-  const st = await api("/rest/v1/students?select=id,card_no,full_name,class_label&order=card_no");
+  /* ⚠️ parent_phone وparent_name **لازمان** هنا: حلقة الأولياء أدناه تُجمّع
+     بالهاتف، وبلا جلبه يصبح undefined ⇒ canonPhone تُعيد "" ⇒ تُتخطّى كل
+     تلميذة بصمت ولا يُنشأ حساب وليّ واحد. وparent_name اسم الوليّ كما
+     أدخلته المدرسة، لا «وليّ <اسم التلميذة>» المُختلَق. */
+  const st = await api("/rest/v1/students?select=id,card_no,full_name,class_label,parent_name,parent_phone&order=card_no");
   if (!st.ok) throw new Error(`فشل قراءة التلاميذ: ${st.text.slice(0, 160)}`);
   const students = st.json || [];
   console.log(`▸ التلاميذ: ${students.length}`);
