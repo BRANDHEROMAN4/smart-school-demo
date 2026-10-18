@@ -23,7 +23,7 @@
  *  وأولياء أمورهنّ (الوليّ يدخل برقم هاتفه لا ببطاقة).
  * ==========================================================================*/
 
-import { writeFileSync } from "node:fs";
+import { writeFileSync, openSync, closeSync } from "node:fs";
 
 const URL_BASE = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -134,6 +134,18 @@ async function main() {
   if (PARENT_ARG >= 0 && !/^0\d{9}$/.test(ONLY_PARENT)) {
     console.error("✖ --parent يحتاج رقم جوّال صحيحًا، مثل: --parent 0555123456");
     process.exit(2);
+  }
+  /* فحص القفل **قبل** أي كتابة على الخادم. العطل الذي وقع فعلًا: كل الحسابات
+     تُنشأ، ثم تفشل كتابة الكشف في آخر السكربت (EBUSY لأن الملفّ مفتوح في
+     Excel) ⇒ الحسابات قائمة ورمزُها لا يعرفه أحد، والكشف المعروض قديمٌ أو
+     وهميّ. الفشل هنا رخيص؛ هناك لا رجعة له. */
+  if (!DRY) {
+    try { closeSync(openSync("roster.csv", "a")); }
+    catch (e) {
+      console.error(`\x1b[31m✖ لا يمكن الكتابة في roster.csv (${e.code}).\x1b[0m\n` +
+        "  أغلقْه في Excel / أي برنامج ثم أعد التشغيل — لم يُنشأ شيء بعد.");
+      process.exit(2);
+    }
   }
   console.log(`\n\x1b[1mEDUVIA — إنشاء الحسابات\x1b[0m  ${DRY ? "\x1b[33m[عرض فقط]\x1b[0m" : ""}\n`);
 

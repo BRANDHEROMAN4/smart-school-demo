@@ -753,6 +753,11 @@ function main() {
       "--reset-pins يجدد رمز الحساب القائم (إنقاذ بعد فشل كتابة الكشف)");
     chk(/process\.argv\.indexOf\("--parent"\)/.test(PROV_CODE) && /ONLY_PARENT/.test(PROV_CODE),
       "--parent يحصر إنشاء الأولياء في رقم واحد (لا حسابات لأرقام البذرة الصوريّة)");
+    /* القفل يُفحص قبل أول نداء للخادم — وإلّا فُقدت الرموز بعد إنشاء الحسابات. */
+    const lockAt = PROV_CODE.search(/openSync\("roster\.csv",\s*"a"\)/);
+    const apiAt = PROV_CODE.search(/await api\("\/rest\/v1\/schools/);
+    chk(lockAt > 0 && apiAt > 0 && lockAt < apiAt,
+      "فحص إمكان الكتابة في roster.csv يسبق أي كتابة على الخادم");
   }
 
   /* ------------------------------------------------------------ الحصيلة */
