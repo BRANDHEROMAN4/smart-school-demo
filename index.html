@@ -836,7 +836,15 @@ const fmtPhone=d=>d.slice(0,2)+" "+d.slice(2,4)+" "+d.slice(4,6)+" "+d.slice(6,8
 const ltr=s=>`<span class="ltr">${s}</span>`;
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-let students=[], teachers=[], gateLog=[], notifs=[], nextId=1, nextCard=1240;
+let students=[], teachers=[], gateLog=[], notifs=[], nextId=1, nextCard=11;
+
+/* أرقام البطاقات: RF-0011 لا RF-001240. الصيغة القديمة "RF-00"+(nextCard++)
+   لصقت بادئةً ثابتة برقم متغيّر الطول، فخرجت بطاقة **إبنتها** RF-001542:
+   سبعة أرقام لا أربعة، وبادئةٌ زائدة. والعدّاد كان يبدأ من 1240 فيُصدر
+   أرقامًا لا علاقة لها بعدد التلميذات (11).
+   الحلّ: عدّادٌ يبدأ من أعلى رقم قائم +١، وصيغةٌ واحدة تُضاف صفرًا إلى 4. */
+const cardNo=n=>"RF-"+pad(n,4);
+const cardNum=c=>{const m=String(c||"").match(/^RF-0*(\d+)$/i);return m?+m[1]:0;};
 
 function genPhone(){return "0"+pick(["5","6","7"])+Array.from({length:8},()=>rand(0,9)).join("");}
 function makeStudent(grade,sec){
@@ -844,7 +852,7 @@ function makeStudent(grade,sec){
   const name=pick(FIRST)+" "+fam;
   const father=pick(FATHER)+" "+fam;
   const ph=genPhone();
-  return {id:nextId++, name, grade, sec, cls:grade+sec, card:"RF-00"+(nextCard++),
+  return {id:nextId++, name, grade, sec, cls:grade+sec, card:cardNo(nextCard++),
     parent:"السيد "+father, phone:ph, notify:pick(["SMS","تطبيق"]),
     state:"present", time:null};
 }
@@ -1440,7 +1448,7 @@ function addStudent(){
   }
   const name=esc(raw)||("تلميذة جديدة "+nextId);
   const pnameRaw=(document.getElementById("ns_parent").value||"").trim()||("وليّ "+(raw||name));
-  const st={id:nextId++,name,grade:g,sec,cls:g+sec,card:"RF-00"+(nextCard++),parent:pnameRaw,phone,notify:"SMS",state:"pending",time:null,cardState:"active"};
+  const st={id:nextId++,name,grade:g,sec,cls:g+sec,card:cardNo(nextCard++),parent:pnameRaw,phone,notify:"SMS",state:"pending",time:null,cardState:"active"};
   assignAcademics(st); students.push(st);
   /* الإنشاء يذهب إلى الطابور أيضًا — وإلّا صارت التلميذة الجديدة جزيرةً:
      لا تصل إليها ملاحظة، ولا يتذكّرها أحد بعد إغلاق المتصفّح.
@@ -3702,7 +3710,14 @@ function loadState(){
     if(d.activeChannels)activeChannels=d.activeChannels;
     if(d.BOOK&&typeof d.BOOK==="object")BOOK=d.BOOK;
     nextId=Math.max(d.nextId||1,...students.map(s=>s.id+1));
-    if(d.nextCard)nextCard=d.nextCard;
+    /* العدّاد يُشتقّ من أعلى بطاقة قائمة أيضًا، فلا يُعاد إصدار رقم قائم —
+       والبطاقات القديمة (ومنها RF-001542 المعطوبة) **لا تُلمس**: هي بالفعل
+       مُعرِّف الدخول على الخادم، وتغييرها محليًّا يفصل البطاقة عن الحساب. */
+    nextCard=Math.max(
+      Number.isFinite(d.nextCard)?d.nextCard:0,
+      ...students.map(s=>cardNum(s.card)+1),
+      1
+    );
     return true;
   }catch(e){return false;}
 }

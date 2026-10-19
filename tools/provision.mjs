@@ -168,7 +168,9 @@ async function main() {
   const students = st.json || [];
   console.log(`▸ التلاميذ: ${students.length}`);
 
-  const roster = [["نوع الحساب", "مُعرِّف الدخول", "الاسم", "القسم", "الرمز السري"]];
+  /* العمود الرابع ليس «قسمًا» لسطر الوليّ بل أبناءه: اسمٌ وقسم. تسميته صراحةً
+     تمنع قراءةً خاطئة كـ«البيانات غير مرتّبة» — فهي في أعمدتها الصحيحة. */
+  const roster = [["نوع الحساب", "مُعرِّف الدخول", "الاسم", "القسم / الأبناء", "الرمز السري"]];
   let made = 0, reused = 0;
 
   /* ---------------------------------------------- حسابات التلاميذ */
@@ -272,7 +274,7 @@ async function main() {
         }
       }
       roster.push(["وليّ أمر", phone, who,
-                   children.map((c) => c.full_name + " (" + c.class_label + ")").join(" · "),
+                   "الأبناء: " + children.map((c) => c.full_name + " (" + c.class_label + ")").join(" · "),
                    PIN_COL(created, pin)]);
     } catch (e) {
       console.error(`  ✗ ${phone} — ${e.message}`);
