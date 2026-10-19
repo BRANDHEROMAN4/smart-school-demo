@@ -758,6 +758,9 @@ function main() {
     const apiAt = PROV_CODE.search(/await api\("\/rest\/v1\/schools/);
     chk(lockAt > 0 && apiAt > 0 && lockAt < apiAt,
       "فحص إمكان الكتابة في roster.csv يسبق أي كتابة على الخادم");
+    const wipeAt = PROV_CODE.search(/existsSync\("roster\.csv"\)/);
+    chk(wipeAt > 0 && wipeAt < apiAt,
+      "ولا يُكتب فوق كشفٍ قائم بلا --reset-pins (كان يمحو الرموز الحقيقية بـ«—»)");
     chk(/القسم \/ الأبناء/.test(PROVID),
       "كشف roster يسمّي العمود الرابع «القسم / الأبناء» — سطر الوليّ ليس قسمًا");
     /* أرقام البطاقات: الصيغة القديمة لصقت "RF-00" برقمٍ من أربعة أرقام

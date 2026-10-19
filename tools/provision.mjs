@@ -23,7 +23,7 @@
  *  وأولياء أمورهنّ (الوليّ يدخل برقم هاتفه لا ببطاقة).
  * ==========================================================================*/
 
-import { writeFileSync, openSync, closeSync } from "node:fs";
+import { writeFileSync, openSync, closeSync, existsSync } from "node:fs";
 
 const URL_BASE = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -133,6 +133,15 @@ async function main() {
   }
   if (PARENT_ARG >= 0 && !/^0\d{9}$/.test(ONLY_PARENT)) {
     console.error("✖ --parent يحتاج رقم جوّال صحيحًا، مثل: --parent 0555123456");
+    process.exit(2);
+  }
+  /* كشفٌ قائم + تشغيلٌ بلا --reset-pins = طمسُ الرموز. الحسابات القائمة
+     تُطبع «الرمز السابق هو النافذ»، والملفّ الذي يحمل ذلك الرمز هو نفسه الذي
+     سنكتب فوقه. نرفض بدل أن نمحو أسرارًا لا بديل عنها. */
+  if (!DRY && !RESET && existsSync("roster.csv")) {
+    console.error("✖ roster.csv موجود — إعادة الكتابة عليه تمحو الرموز الحالية.\n" +
+      "  انقل الكشف القديم أولًا (Move-Item roster.csv roster.old.csv)،\n" +
+      "  أو استعمل --reset-pins لإصدار رموز جديدة لكل الحسابات.");
     process.exit(2);
   }
   /* فحص القفل **قبل** أي كتابة على الخادم. العطل الذي وقع فعلًا: كل الحسابات
