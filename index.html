@@ -3737,6 +3737,18 @@ clock();setInterval(clock,1000);
 /* مؤشّر المزامنة + شرح وضع التشغيل على شاشة الدخول */
 renderSyncChip();
 renderDemoAccounts();
+/* وصلٌ من بوّابة تطبيق الأولياء: ?id=0555… يعبّئ المعرّف وحده.
+   الرمز **لا يمرّ في العنوان أبدًا** — العناوين تُسجَّل في سجلّ المتصفّح
+   وتاريخه، والرمز سرّ. التعبئة راحةٌ فقط، والتحقّق يبقى عند الخادم. */
+(function loginFromQuery(){
+  let qs; try{ qs=new URLSearchParams(location.search); }catch(e){ return; }
+  const id=String(qs.get("id")||qs.get("phone")||"").trim();
+  if(!id||id.length>64) return;
+  const el=document.getElementById("loginId"), pin=document.getElementById("p");
+  if(!el) return;
+  el.value=id;
+  if(pin) setTimeout(()=>{ try{ pin.focus(); }catch(e){} },350);
+})();
 (function setLoginMode(){
   const el=document.getElementById("loginMode"); if(!el) return;
   el.innerHTML = (SYNC.mode==="remote")

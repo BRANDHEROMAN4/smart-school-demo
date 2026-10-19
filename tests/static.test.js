@@ -773,6 +773,14 @@ function main() {
       "كل مواضع إصدار البطاقة تمرّ بـcardNo (توليد البذرة + إضافة تلميذة)");
     chk(/let students=\[\][^;]*nextCard=11;/.test(HTML_CODE),
       "عدّاد البطاقات يبدأ بعد الأرقام المحفوظة (11) لا من 1240");
+    /* تطبيق الأولياء: صفحة تحويل، لا دخولٌ وهميّ يقبل أي رمز. */
+    const PARENT = fs.readFileSync(path.join(ROOT, "parent-app.html"), "utf8");
+    chk(/location\.replace\(/.test(PARENT) && /index\.html/.test(PARENT),
+      "parent-app.html تحوّل إلى المنصّة الحقيقية");
+    chk(!/function plogin|ph\.length<9/.test(PARENT),
+      "ولا يوجد فيه الدخول الوهميّ القديم (كان يقبل أي رقم وأي رمز)");
+    chk(/loginFromQuery/.test(HTML_CODE) && /qs\.get\("id"\)/.test(HTML_CODE),
+      "والمنصّة تعبّئ المعرّف من ?id= القادم من بوّابة الأولياء");
   }
 
   /* ------------------------------------------------------------ الحصيلة */

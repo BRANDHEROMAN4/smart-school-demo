@@ -1,5 +1,5 @@
 /* خادم محلي بسيط لتجربة الـPWA (تثبيت + service worker يحتاجان http لا file://)
-   التشغيل:  node serve.js    ثم افتح:  http://localhost:8080/parent-app.html */
+   التشغيل:  node serve.js    ثم افتح:  http://localhost:8080/ */
 const http = require("http"), fs = require("fs"), path = require("path");
 const root = __dirname, port = 8080;
 const MIME = {
@@ -9,7 +9,7 @@ const MIME = {
 };
 http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split("?")[0]);
-  if (p === "/") p = "/parent-app.html";
+  if (p === "/") p = "/index.html";
   const fp = path.join(root, p);
   if (!fp.startsWith(root)) { res.writeHead(403); return res.end("403"); }
   fs.readFile(fp, (e, data) => {
@@ -17,4 +17,4 @@ http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": MIME[path.extname(fp).toLowerCase()] || "application/octet-stream" });
     res.end(data);
   });
-}).listen(port, () => console.log("EDUVIA PWA → http://localhost:" + port + "/parent-app.html"));
+}).listen(port, () => console.log("EDUVIA PWA → http://localhost:" + port + "/index.html"));
