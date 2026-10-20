@@ -793,6 +793,16 @@ function main() {
       "وزرّ «تثبيت التطبيق على الهاتف» يعود للعمل");
     chk(/eduvia\.lastLoginId/.test(HTML_CODE),
       "وآخر معرّف دخول يُعبَّأ عند فتح التطبيق المثبَّت (الرمز لا يُخزَّن)");
+    /* النشر انتقل إلى GitHub Pages: رابط البوّابة الافتراضي يجب أن يتبعه،
+       وسير العمل لا ينشر إلا ما يحتاجه الزائر. */
+    chk(/brandheroman4\.github\.io\/eduvia-parent-app\//.test(HTML_CODE),
+      "رابط البوّابة الافتراضي على GitHub Pages");
+    chk(!/eduvia-parent-app\.netlify\.app/.test(HTML_CODE),
+      "ولا يبقى رابط Netlify القديم داخل المنصّة");
+    const WF = fs.readFileSync(path.join(ROOT, ".github", "workflows", "deploy.yml"), "utf8");
+    chk(/upload-pages-artifact/.test(WF) && /--exclude='roster\*\.csv'/.test(WF)
+      && /--exclude='sql'/.test(WF),
+      "سير عمل النشر يستثني قاعدة البيانات والاختبارات والقوائم السرّية");
     /* مستورد القائمة الحقيقية: موجود، ويحفظ الرقم كما هو، ولا يختلق رقمًا. */
     const IMP = fs.readFileSync(path.join(ROOT, "tools", "import-students.mjs"), "utf8");
     chk(/--dry/.test(IMP) && /--template/.test(IMP) && /export function parseCSV/.test(IMP),
