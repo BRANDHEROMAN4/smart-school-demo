@@ -1,10 +1,10 @@
 {
-  "name": "EDUVIA — متابعة وليّ الأمر",
+  "name": "EDUVIA — منصّة المدرسة",
   "short_name": "EDUVIA",
-  "description": "تابع حضور ونقاط ابنك لحظيًّا مع منظومة EDUVIA.",
+  "description": "منصّة إدارة المدرسة ومتابعة الأولياء: الحضور، النقاط، الإشعارات، ودخول الوليّ برقم هاتفه.",
   "lang": "ar",
   "dir": "rtl",
-  "start_url": "./parent-app.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

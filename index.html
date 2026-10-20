@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EDUVIA · منظومة إدارة التعليم الذكي</title>
+<link rel="manifest" href="manifest.json">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -169,6 +170,15 @@ svg .ptlbl{fill:var(--text);font-size:11px;font-weight:700}
 .toast small{color:var(--muted)}
 @keyframes slidein{from{opacity:0;transform:translateX(-30px)}to{opacity:1}}
 
+/* تثبيت التطبيق — الزرّ يظهر فقط حين يقول المتصفّح إنّ المنصّة قابلة للتثبيت */
+#installBtn{display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  z-index:110;align-items:center;gap:8px;border:0;border-radius:999px;padding:12px 20px;
+  background:#F7941E;color:#fff;font-family:inherit;font-weight:800;font-size:13.5px;
+  cursor:pointer;box-shadow:0 10px 24px rgba(247,148,30,.42)}
+#installBtn.show{display:inline-flex}
+#installBtn:active{transform:translateX(-50%) translateY(1px)}
+body.has-install #toasts{bottom:78px}
+
 /* Modal */
 #modal{position:fixed;inset:0;z-index:90;background:rgba(10,18,38,.55);display:flex;align-items:center;justify-content:center}
 #modal .mbox{background:var(--surface);width:440px;max-width:94vw;border-radius:16px;padding:24px;box-shadow:var(--shadow-lg)}
@@ -224,7 +234,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
 @media(max-width:760px){.pgrid{grid-template-columns:1fr}}
 
 @media print{
-  .sidebar,.topbar,.hero,.top-actions,.scan-btn,.btn,.icon-btn,.demo-tag,#toasts,.search,.sel,#profile,#annModal{display:none!important}
+  .sidebar,.topbar,.hero,.top-actions,.scan-btn,.btn,.icon-btn,.demo-tag,#toasts,#installBtn,.search,.sel,#profile,#annModal{display:none!important}
   .main{margin:0;padding:0}
   .page.hidden{display:none}
   .panel{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
@@ -765,6 +775,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
 </main>
 
 <div id="toasts"></div>
+<button id="installBtn" type="button" onclick="doInstall()">⬇️ تثبيت التطبيق على الهاتف</button>
 <div class="demo-tag">● نسخة تجريبية · بيانات افتراضية</div>
 
 <!-- Modal -->
@@ -1588,6 +1599,8 @@ async function doLogin(){
     const r=await eduviaLogin(idEl.value, pinEl.value);
     if(!r.ok){ err.textContent=r.error; return; }
     CURRENT_USER={loginId:idEl.value.trim(), name:r.name, role:r.role, studentId:r.studentId||null};
+    /* تذكّر المعرّف لهذا الجهاز فقط — لتعبئته عند الفتح التالي من الأيقونة. */
+    try{ localStorage.setItem("eduvia.lastLoginId", CURRENT_USER.loginId); }catch(e){}
     document.getElementById("login").style.display="none";
     pinEl.value="";
 
@@ -3741,8 +3754,12 @@ renderDemoAccounts();
    الرمز **لا يمرّ في العنوان أبدًا** — العناوين تُسجَّل في سجلّ المتصفّح
    وتاريخه، والرمز سرّ. التعبئة راحةٌ فقط، والتحقّق يبقى عند الخادم. */
 (function loginFromQuery(){
-  let qs; try{ qs=new URLSearchParams(location.search); }catch(e){ return; }
-  const id=String(qs.get("id")||qs.get("phone")||"").trim();
+  let qs; try{ qs=new URLSearchParams(location.search); }catch(e){ qs=null; }
+  let id=qs?String(qs.get("id")||qs.get("phone")||"").trim():"";
+  /* التطبيق المثبَّت يُفتح على صفحة الدخول بلا رابط ⇒ نعبّئ آخر معرّف
+     استُخدم على هذا الجهاز. **المعرّف وحده** (هاتف/بطاقة)؛ الرمز السرّي
+     لا يُخزَّن أبدًا — يبقى مطلوبًا في كل فتح. */
+  if(!id){ try{ id=String(localStorage.getItem("eduvia.lastLoginId")||"").trim(); }catch(e){} }
   if(!id||id.length>64) return;
   const el=document.getElementById("loginId"), pin=document.getElementById("p");
   if(!el) return;
@@ -3756,6 +3773,51 @@ renderDemoAccounts();
     : "وضع تجريبي محلي · البيانات في هذا الجهاز وحده (لا خادم). حسابات التجربة أدناه — <b>وهي لا تعمل على الخادم</b>.";
 })();
 if(SYNC.mode==="remote" && QUEUE.length) scheduleFlush(1500);
+
+/* ================= PWA: تثبيت التطبيق على الهاتف =================
+   كان زرّ التثبيت موجودًا في نموذج تطبيق الأولياء القديم؛ وبُني النموذج
+   كاملًا فاختفى الزرّ معه. التثبيت الآن **للمنصّة الحقيقية** لأنها هي التي
+   تحمل الحساب والبيانات — لا صفحة تحويل.
+   المتصفّح يبعث beforeinstallprompt فقط عندما تتوفّر شروط التثبيت
+   (HTTPS + manifest + أيقونات). وإلّا يبقى الزرّ مخفيًّا بلا وعد كاذب. */
+let deferredPrompt=null;
+function showInstallBtn(label){
+  const b=document.getElementById("installBtn"); if(!b) return;
+  if(label) b.textContent=label;
+  b.classList.add("show"); document.body.classList.add("has-install");
+}
+window.addEventListener("beforeinstallprompt",e=>{
+  e.preventDefault(); deferredPrompt=e;
+  showInstallBtn("⬇️ تثبيت التطبيق على الهاتف");
+});
+async function doInstall(){
+  if(!deferredPrompt){
+    toast("التثبيت اليدويّ",
+      "من قائمة المتصفّح اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».","a");
+    return;
+  }
+  try{ deferredPrompt.prompt(); await deferredPrompt.userChoice; }catch(e){}
+  deferredPrompt=null;
+  const b=document.getElementById("installBtn");
+  if(b) b.classList.remove("show");
+  document.body.classList.remove("has-install");
+}
+window.addEventListener("appinstalled",()=>{
+  deferredPrompt=null;
+  const b=document.getElementById("installBtn");
+  if(b) b.classList.remove("show");
+  document.body.classList.remove("has-install");
+  toast("تمّ التثبيت ✅","ستجد EDUVIA بين تطبيقات هاتفك.","g");
+});
+/* iPhone لا يدعم beforeinstallprompt — نرشد بدل أن نصمت. */
+(function iosInstallHint(){
+  try{
+    const standalone=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone;
+    if(standalone) return;
+    if(!/iphone|ipad|ipod/i.test(navigator.userAgent||"")) return;
+    showInstallBtn("➕ أضف EDUVIA إلى الشاشة الرئيسية");
+  }catch(e){}
+})();
 
 /* عامل الخدمة — يجعل المنصّة **تُفتح** بلا شبكة، لا تحفظ بياناتها فقط.
    لم يكن مُسجَّلًا قبل اليوم: البيانات كانت تبقى، لكن الصفحة لا تُفتح بلا شبكة. */

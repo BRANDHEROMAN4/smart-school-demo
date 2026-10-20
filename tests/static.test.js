@@ -781,6 +781,30 @@ function main() {
       "ولا يوجد فيه الدخول الوهميّ القديم (كان يقبل أي رقم وأي رمز)");
     chk(/loginFromQuery/.test(HTML_CODE) && /qs\.get\("id"\)/.test(HTML_CODE),
       "والمنصّة تعبّئ المعرّف من ?id= القادم من بوّابة الأولياء");
+    /* تثبيت التطبيق: كان زرّه في النموذج القديم، فاختفى باختفائه.
+       التثبيت الآن للمنصّة الحقيقية — هي التي تحمل الحساب والبيانات. */
+    chk(/<link rel="manifest" href="manifest\.json">/.test(HTML),
+      "المنصّة مرتبطة بمانيفست التثبيت");
+    const MF = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
+    chk(MF.start_url === "./index.html",
+      "والتطبيق المثبَّت يبدأ من صفحة الدخول الحقيقية لا من صفحة تحويل",
+      `start_url=${MF.start_url}`);
+    chk(/beforeinstallprompt/.test(HTML_CODE) && /function doInstall\(/.test(HTML_CODE),
+      "وزرّ «تثبيت التطبيق على الهاتف» يعود للعمل");
+    chk(/eduvia\.lastLoginId/.test(HTML_CODE),
+      "وآخر معرّف دخول يُعبَّأ عند فتح التطبيق المثبَّت (الرمز لا يُخزَّن)");
+    /* مستورد القائمة الحقيقية: موجود، ويحفظ الرقم كما هو، ولا يختلق رقمًا. */
+    const IMP = fs.readFileSync(path.join(ROOT, "tools", "import-students.mjs"), "utf8");
+    chk(/--dry/.test(IMP) && /--template/.test(IMP) && /export function parseCSV/.test(IMP),
+      "مستورد التلاميذ موجود وفيه عرضٌ مسبق وقالب");
+    chk(/parent_phone: phone \|\| phoneRaw \|\| null/.test(IMP),
+      "الاستيراد يحفظ رقم الوليّ (أو null) — لا يختلق رقمًا وهميًّا");
+    const IMP_CODE = IMP.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    chk(!/eyJ[A-Za-z0-9_-]{20,}/.test(IMP_CODE),
+      "ولا مفتاح service_role حقيقيّ مكتوبٌ داخل الملفّ (يُقرأ من البيئة)");
+    const GI = fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8");
+    chk(/^students\*\.csv$/m.test(GI) && /^data\/$/m.test(GI),
+      "قوائم التلاميذ الحقيقية (أسماء أطفال وأرقام أولياء) مستثناة من Git");
   }
 
   /* ------------------------------------------------------------ الحصيلة */

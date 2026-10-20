@@ -30,6 +30,7 @@ const suites = [
   { file: "boot.test.js", name: "الإقلاع", need: null },
   { file: "static.test.js", name: "التدقيق الساكن للملفّ", need: null },
   { file: "qr.test.js", name: "رمز QR يُقرأ فعلًا", need: null },
+  { file: "import.test.js", name: "تحليل قائمة التلاميذ", need: null },
   { file: "sync.test.js", name: "المزامنة والمصادقة", need: null },
   {
     file: "rls.test.js",
