@@ -1348,7 +1348,7 @@ function markPresent(id){
      وبنفس حدّ البوابة: أثر العبور للجميع، وحضور اليوم لمن يملك `can_record`. */
   if(canRecord(currentRole))
     enqueue("attendance", rowFor("attendance",{
-      student_id:id, day:new Date().toISOString().slice(0,10), state:"present", at_time:hm
+      student_id:id, day:todayISO(), state:"present", at_time:hm
     }));
   render();toast("تحضير يدوي ✅",`${st.name} · ${st.cls}`,"g");
 }
@@ -2251,7 +2251,7 @@ function behavVerdictOf(st){
 }
 function daysSince(d){const t=Date.parse(d);return isNaN(t)?0:Math.floor((Date.now()-t)/864e5);}
 function behavBalance(){const act=NOTES.filter(n=>n.status!=="مؤرشف");const pos=act.filter(n=>noteKind(n)==="pos").length;return {pos,neg:act.length-pos,total:act.length};}
-function applyRetention(){let c=0;const cut=new Date(Date.now()-BEHAV_RETENTION_DAYS*864e5).toISOString().slice(0,10);
+function applyRetention(){let c=0;const cut=isoOf(new Date(Date.now()-BEHAV_RETENTION_DAYS*864e5));
   NOTES.forEach(n=>{if(n.status!=="مؤرشف"&&n.date&&n.date<cut){n.status="مؤرشف";c++;}});return c;}
 function runRetention(){const c=applyRetention();audit("تطبيق سياسة احتفاظ سجلّ السلوك","سجلّ السلوك",c?("أُرشف "+c+" ملاحظة"):"لا شيء");renderNtList();toast("سياسة الاحتفاظ 🛡️",c?("أُرشف "+c+" ملاحظة تجاوزت "+BEHAV_RETENTION_DAYS+" يومًا."):"لا ملاحظات تجاوزت السقف.","g");}
 function initPolicies(restored){const a=document.getElementById("polReply"),b=document.getElementById("polRet");
@@ -2304,7 +2304,7 @@ function objectNote(id){
   const n=NOTES.find(x=>x.id===id);if(!n)return;
   const ta=document.getElementById("obj_"+id);const txt=((ta&&ta.value)||"").trim();
   if(!txt){toast("تنبيه","اكتب سبب الاعتراض أولًا.","a");return;}
-  n.reply=txt;n.status="معترَض عليه";n.replyDate=new Date().toISOString().slice(0,10);
+  n.reply=txt;n.status="معترَض عليه";n.replyDate=todayISO();
   /* الاعتراض **لا يمسّ الحالة ولا أيّ عمود آخر**: التلميذة تكتب `reply`
      و`replied_at` فقط، والخادم يمنعها من `status` بمنحة على مستوى العمود.
      الواجهة تُظهر «قيد النظر» للحال، والخادم يبقى هو المرجع. */
@@ -2585,7 +2585,7 @@ function postNote(){
   const note=document.getElementById("ntText").value.trim();
   if(!note){toast("تنبيه","اكتب نص الملاحظة أولًا.","a");return;}
   const s=students.find(x=>x.id===sid),kind=behavCat(cat).k;
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayISO();
   const n={sid,id:"b"+Date.now(),date:today,t:"المعلّم",subj:"السلوك",cat,note,kind,status:"قائم"};
   NOTES.unshift(n);
   /* نتذكّر مفتاح المزامنة على الملاحظة نفسها: فيصير اعتراض التلميذة لاحقًا
@@ -3261,7 +3261,12 @@ function renderSyncChip(){
 const NOTE_STATUS_UI=n=>n.status==="revoked"?"ملغى"
   :n.status==="archived"?"مؤرشف"
   :(n.reply?"معترَض عليه":"قائم");
-const todayISO=()=>new Date().toISOString().slice(0,10);
+/* التاريخ المحلّي لا UTC — رأيناه حيًّا: عبور 00:24 في 2026-10-21 (الجزائر
+   UTC+1) كُتب `day=2026-10-20` لأنّ `toISOString` تحوّل إلى UTC. والأثر ليس
+   تجميليًّا: `attendance` مقيَّدة بـ`unique(student_id, day)` ⇒ عبور نصف الليل
+   يصطدم بصفّ الأمس ويطمسه (upsert). ويُبنى التاريخ من مكوّنات `Date` المحلّية. */
+const isoOf=(d)=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayISO=()=>isoOf(new Date());
 /* تاريخ ISO (‎2026-09-21) ← ما يقرؤه الإنسان (‎21/09/2026).
    `due_on` عمود تاريخ في القاعدة، وعرضه ISO خامًا في الشاشة غير مفهوم. */
 function dueAr(iso){const p=String(iso||"").split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:"";}

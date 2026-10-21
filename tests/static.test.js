@@ -389,6 +389,14 @@ function main() {
       "وسجلّ البوابة يُرسَل بلا شرط دور (الأمانة تكتبه على الخادم)");
     chk(/recordCrossing\(pick\(cand\)\)/.test(body("simulateScan") || ""),
       "والمحاكاة تفوّض إلى recordCrossing (لا نسخة ثانية من القواعد)");
+    /* التاريخ المحلّي لا UTC — عبور 00:24 في UTC+1 كان يُكتب في يوم الأمس
+       (رأيناه حيًّا: day=2026-10-20 لعبور 2026-10-21)، وattendance مقيَّدة
+       بـunique(student_id, day) ⇒ يطمس حضور الأمس لا أنّه يضيف صفًّا. */
+    chk(!/toISOString\(\)\.slice\(0,\s*10\)/.test(HTML),
+      "تاريخ اليوم يُبنى محلّيًّا لا من UTC (toISOString)",
+      "toISOString تُعيد تاريخ UTC؛ في UTC+1 كل عبور بين 00:00 و00:59 يُقيَّد في اليوم السابق");
+    chk(/const isoOf\s*=/.test(HTML) && /const todayISO\s*=\s*\(\)\s*=>\s*isoOf\(new Date\(\)\)/.test(HTML),
+      "todayISO مبنية على مُنسِّق تاريخ محلّي واحد (isoOf) يستعمل getFullYear/getMonth/getDate");
   }
 
   /* ------------------------------ ⑩ الحضور لا يقول ما لم يقع -----------------
