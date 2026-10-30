@@ -567,7 +567,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
       <h2>💳 تفعيل اشتراك وليّ الأمر</h2>
       <p class="muted" style="margin-top:0">التفعيل من مسؤول المدير أو الأمانة فقط، بعد قبض المبلغ وتسجيل رقم الوصل.</p>
       <div class="actions" style="gap:8px;flex-wrap:wrap">
-        <input id="subParentPhone" class="search" style="min-width:220px" placeholder="رقم هاتف الولي، مثل 0551234567" aria-label="رقم هاتف الولي">
+        <input id="subParentPhone" class="search" style="min-width:220px" placeholder="رقم هاتف الولي، مثل 0551234567" aria-label="رقم هاتف الولي" oninput="applyParentPlanChoiceToAdmin(this.value)">
         <input id="subPaidUntil" class="search" style="min-width:180px" type="date" aria-label="آخر يوم للاشتراك">
         <input id="subAmount" class="search" style="min-width:140px" type="number" min="0" placeholder="المبلغ بالدينار" aria-label="مبلغ الاشتراك">
         <input id="subReceipt" class="search" style="min-width:180px" placeholder="رقم الوصل" aria-label="رقم وصل الدفع">
@@ -2598,16 +2598,48 @@ function unlinkedHTML(){
     الحساب قائم، لكنه لم يُربَط بعد بأيّ تلميذة في سجلّ المؤسسة.<br>
     راجعي الإدارة لربط حسابك بالمعرِّف <span class="code">${who}</span>.</div></div>`;
 }
+function isoLocalDate(date){
+  const y=date.getFullYear();
+  const m=String(date.getMonth()+1).padStart(2,"0");
+  const d=String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+function parentPlanDefaults(plan,amount){
+  const now=new Date();
+  let paidUntil;
+  if(plan=== "الاشتراك الشهري"){
+    const end=new Date(now.getFullYear(),now.getMonth()+1,now.getDate());
+    paidUntil=isoLocalDate(end);
+  }else if(plan=== "الاشتراك الثلاثي"){
+    const end=new Date(now.getFullYear(),now.getMonth()+3,now.getDate());
+    paidUntil=isoLocalDate(end);
+  }else{
+    const seasonEndYear=now.getMonth()>=6?now.getFullYear()+1:now.getFullYear();
+    paidUntil=`${seasonEndYear}-06-30`;
+  }
+  return {paidUntil,amount:Number(amount)||0};
+}
 function requestParentPlan(plan,amount){
   const login=(CURRENT_USER&&CURRENT_USER.loginId)||"";
-  try{ localStorage.setItem("eduvia.parentPlanChoice",JSON.stringify({plan,amount,login,at:new Date().toISOString()})); }catch(e){}
+  const defaults=parentPlanDefaults(plan,amount);
+  try{ localStorage.setItem("eduvia.parentPlanChoice",JSON.stringify({plan,amount,login,paidUntil:defaults.paidUntil,...defaults,at:new Date().toISOString()})); }catch(e){}
   toast("تم اختيار الخطة",""+plan+" — "+amount+" دج. راجعي أمانة المؤسسة للتجديد؛ لا يفعّل الاختيار الاشتراك تلقائيًا.","b");
+}
+function applyParentPlanChoiceToAdmin(phone){
+  let choice=null;
+  try{ choice=JSON.parse(localStorage.getItem("eduvia.parentPlanChoice")||"null"); }catch(e){ return; }
+  if(!choice||!choice.login||canonParentPhone(choice.login)!==canonParentPhone(phone)) return;
+  const amountInput=document.getElementById("subAmount");
+  const dateInput=document.getElementById("subPaidUntil");
+  if(amountInput&&(!Number(amountInput.value)||Number(amountInput.value)==0)) amountInput.value=choice.amount||0;
+  if(dateInput&&(!dateInput.value||dateInput.value===isoLocalDate(new Date()))) dateInput.value=choice.paidUntil||"";
 }
 function canonParentPhone(phone){
   return String(phone||"").replace(/[^0-9]/g,"").replace(/^2130?/,(m)=>m.startsWith("213")?"0":"").slice(0,20);
 }
 async function activateParentSubscription(){
   const phone=(document.getElementById("subParentPhone")||{}).value||"";
+  applyParentPlanChoiceToAdmin(phone);
   const paidUntil=(document.getElementById("subPaidUntil")||{}).value||"";
   const amount=Number((document.getElementById("subAmount")||{}).value||0);
   const receipt=((document.getElementById("subReceipt")||{}).value||"").trim();
