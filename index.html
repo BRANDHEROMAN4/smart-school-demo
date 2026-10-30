@@ -2535,7 +2535,48 @@ function requestParentPlan(plan,amount){
   try{ localStorage.setItem("eduvia.parentPlanChoice",JSON.stringify({plan,amount,login,at:new Date().toISOString()})); }catch(e){}
   toast("تم اختيار الخطة",""+plan+" — "+amount+" دج. راجعي أمانة المؤسسة للتجديد؛ لا يفعّل الاختيار الاشتراك تلقائيًا.","b");
 }
+function parentSubscriptionPaid(){
+  const until=SYNC.subscription&&SYNC.subscription.paid_until?String(SYNC.subscription.paid_until):"";
+  if(!until) return false;
+  const end=new Date(until.length===10?until+"T23:59:59":until);
+  return Number.isFinite(end.getTime())&&end.getTime()>=Date.now();
+}
+function ensureParentFreeStatus(){
+  if(parentSubscriptionPaid()) return;
+  try{
+    const key="eduvia.parentFreeStatus";
+    const saved=JSON.parse(localStorage.getItem(key)||"null");
+    if(!saved||saved.mode!=="free") localStorage.setItem(key,JSON.stringify({mode:"free",automatic:true,activatedAt:new Date().toISOString(),login:(CURRENT_USER&&CURRENT_USER.loginId)||""}));
+  }catch(e){}
+}
+function parentSubscriptionBannerHTML(){
+  const paid=parentSubscriptionPaid();
+  ensureParentFreeStatus();
+  if(paid){
+    const until=esc(String(SYNC.subscription.paid_until).slice(0,10));
+    return `<div class="panel" style="border:2px solid var(--primary);margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><b style="font-size:15px">حساب مدفوع نشط</b><div class="muted" style="margin-top:4px">سارٍ حتى ${until}</div></div><span class="pill primary">جميع الخدمات متاحة</span></div></div>`;
+  }
+  return `<div class="panel" style="border:2px solid #1cbd8c;margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><b style="font-size:15px">حساب مجاني مفعّل تلقائيًا ✓</b><div class="muted" style="margin-top:4px">الإشعارات الأساسية مجانية منذ فتح الحساب.</div></div><span class="pill green">مجاني</span></div></div>`;
+}
+function parentFeaturesTableHTML(){
+  return `<div class="panel" style="overflow-x:auto"><h2>📋 مقارنة مميزات حساب وليّ الأمر</h2><table><thead><tr><th>الخدمة</th><th>الحساب المجاني</th><th>الحساب المدفوع</th></tr></thead><tbody>
+    <tr><td>تنبيه دخول التلميذة</td><td><b class="green">✓ مجاني</b></td><td><b>✓ متاح</b></td></tr>
+    <tr><td>تنبيه التأخر والغياب</td><td><b class="green">✓ مجاني</b></td><td><b>✓ متاح</b></td></tr>
+    <tr><td>تنبيه الاستدعاء</td><td><b class="green">✓ مجاني</b></td><td><b>✓ متاح</b></td></tr>
+    <tr><td>النقاط والمعدلات والرتبة</td><td><b style="color:#ef4444">✕ غير متاحة</b></td><td><b class="green">✓ متاحة</b></td></tr>
+    <tr><td>الكشوف والتقارير</td><td><b style="color:#ef4444">✕ غير متاحة</b></td><td><b class="green">✓ متاحة</b></td></tr>
+    <tr><td>السلوك والملاحظات والواجبات</td><td><b style="color:#ef4444">✕ غير متاحة</b></td><td><b class="green">✓ متاحة</b></td></tr>
+    <tr><td>إرسال الشكاوى وملاحظات وليّ الأمر</td><td><b style="color:#ef4444">✕ غير متاحة</b></td><td><b class="green">✓ متاحة</b></td></tr>
+    <tr><td>الإعلانات والخدمات الأخرى</td><td><b style="color:#ef4444">✕ غير متاحة</b></td><td><b class="green">✓ متاحة</b></td></tr>
+  </tbody></table></div>`;
+}
+function parentPaidLockedHTML(service){
+  return `<div class="panel"><h2>🔒 ${esc(service)}</h2><div class="notice y"><b>هذه الخدمة متاحة للحساب المدفوع فقط.</b><br>حسابك مجاني حاليًا، ويظل تنبيه الدخول والتأخر والغياب والاستدعاء متاحًا مجانًا.</div><button class="btn primary" style="margin-top:8px" onclick="showPage('paccount')">عرض اشتراكات الحساب</button></div>`;
+}
 function renderParentWing(){
+  ensureParentFreeStatus();
+  const trial=document.getElementById("trial");
+  if(trial) trial.textContent=parentSubscriptionPaid()?"حساب مدفوع · نشط":"حساب مجاني · الإشعارات الأساسية مجانًا";
   const st=meStudent;
   if(!st){ PARENT_PAGES.forEach(p=>{const el=document.getElementById(p); if(el) el.innerHTML=unlinkedHTML();}); return; }
   const r=studentRank(st,0);
@@ -2543,10 +2584,11 @@ function renderParentWing(){
   const sub=SYNC.subscription;
   document.getElementById("phome").innerHTML=`
     <div class="hero"><div class="htxt"><b>متابعة ${esc(st.name)} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${esc(st.cls)} · ${esc(CURRENT_SCHOOL)}</p></div></div>
-    <div class="cards" style="grid-template-columns:repeat(4,1fr)">
+    ${parentSubscriptionBannerHTML()}
+    ${parentFeaturesTableHTML()}
+    <div class="cards" style="grid-template-columns:repeat(${parentSubscriptionPaid()?"4":"2"},1fr)">
       ${kpiCard("نسبة حضورها","🗓️",pctTxt(st.attRate),"green")}
-      ${kpiCard("معدّلها العام","🎯",st.avg[0]+" /10","blue")}
-      ${kpiCard("رتبتها في القسم","🏅",r.rank+" / "+r.total,"")}
+      ${parentSubscriptionPaid()?kpiCard("معدّلها العام","🎯",st.avg[0]+" /10","blue")+kpiCard("رتبتها في القسم","🏅",r.rank+" / "+r.total,""):""}
       ${kpiCard("أيام غيابها","🚫",st.absDays,"red")}
     </div>
     <div class="grid2">
@@ -2565,36 +2607,38 @@ function renderParentWing(){
       <div class="notice b">حالة ${esc(st.name)} اليوم: ${pill(st.state)}</div>
       <div class="muted" style="margin-top:8px">النسبة تُحسَب على الأيام <b>المُسجَّلة</b> وحدها، ويُعرَض «—» إن لم يُسجَّل شيء بعد.</div>
     </div>`;
-  document.getElementById("pgrades").innerHTML=`
+  document.getElementById("pgrades").innerHTML=parentSubscriptionPaid()?`
     <div class="panel"><div class="section-head"><h2>📊 نقاط ${esc(st.name)} — الفصل الأول</h2><button class="btn" onclick="printReportCard(${st.id})">🖨️ كشف النقاط</button></div>
     <div class="cards" style="grid-template-columns:repeat(3,1fr)">${kpiCard("المعدّل","🎯",st.avg[0]+" /10","blue")}${kpiCard("الرتبة","🏅",r.rank+" / "+r.total,"")}${kpiCard("التقدير","⭐",appreciation(st.avg[0]),"")}</div>
     <table><thead><tr><th>المادة</th><th>المعامل</th><th>النقطة /10</th></tr></thead><tbody>${SUBJECTS.map(s=>`<tr><td>${s.n}</td><td>${s.c}</td><td class="${markClass(st.marks[0][s.n])}"><b>${st.marks[0][s.n]}</b></td></tr>`).join("")}</tbody></table>
-    ${smiss.length?`<div class="notice y" style="margin-top:10px">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${smiss.map(esc).join(" · ")}</div>`:""}</div>`;
-  document.getElementById("pwork").innerHTML=`
+    ${smiss.length?`<div class="notice y" style="margin-top:10px">لم تُدخَل نقاط هذه الموادّ على الخادم بعد، والمعروض فيها <b>تقدير محلّي</b> لا نقطة رسمية: ${smiss.map(esc).join(" · ")}</div>`:""}</div>`:parentPaidLockedHTML("النقاط والمعدلات والكشوف");
+  document.getElementById("pwork").innerHTML=parentSubscriptionPaid()?`
     <div class="panel"><h2>📚 الواجبات المنزلية — القسم ${esc(st.cls)}</h2>
     ${HOMEWORK.filter(h=>h.cls===st.cls||h.cls==="الكل").map(h=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(h.subj)}</b><span class="pill late">📅 ${esc(h.due)}</span></div><div style="margin-top:5px;font-size:13px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}
-    <div class="muted" style="margin-top:8px">تتابعين هنا ما كُلِّفت به ابنتك، لتساعديها على إنجازه في وقته.</div></div>`;
+    <div class="muted" style="margin-top:8px">تتابعين هنا ما كُلِّفت به ابنتك، لتساعديها على إنجازه في وقته.</div></div>`:parentPaidLockedHTML("الواجبات المنزلية");
   const _nb=behavBalance();
-  document.getElementById("pnotes").innerHTML=`
+  document.getElementById("pnotes").innerHTML=parentSubscriptionPaid()?`
     <div class="panel"><h2>📌 السلوك والملاحظات</h2>
     <div class="notice g">التقدير السلوكي العام: <b>${esc(behavVerdictOf(st))}</b></div>
     <div class="notice b" style="font-size:12.5px"><b>حقوق ابنتك مضمونة:</b> سجلّ السلوك <b>متوازن</b> (إيجابي/سلبي)، ولها <b>حقّ الاعتراض</b> على أيّ ملاحظة خلال ${BEHAV_REPLY_DAYS} أيام، ولا تُحفظ الملاحظات إلا <b>${BEHAV_RETENTION_DAYS} يومًا</b> ثم تُؤرشف.</div>
     <div class="muted" style="margin:4px 0 6px">توازن السجلّ: ${_nb.pos} إيجابي · ${_nb.neg} سلبي</div>
     ${NOTES.filter(n=>n.sid===st.id).map(n=>noteCard(n,"parent")).join("")||'<div class="muted">لا ملاحظات مسجَّلة. 🌱</div>'}
-    <div class="muted" style="margin-top:10px">لتقديم اعتراض على ملاحظة، تفعله ابنتك من حسابها خلال المهلة — أو راجعي الإدارة مباشرةً.</div></div>`;
+    <div class="muted" style="margin-top:10px">لتقديم اعتراض على ملاحظة، تفعله ابنتك من حسابها خلال المهلة — أو راجعي الإدارة مباشرةً.</div></div>`:parentPaidLockedHTML("السلوك والملاحظات");
   document.getElementById("psummon").innerHTML=`
     <div class="panel"><h2>📨 الاستدعاءات</h2>
     ${SUMMONS.filter(x=>x.sid===st.id).map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · الحالة: ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا استدعاءات حاليًا.</div>'}
     </div>`;
-  document.getElementById("pannounce").innerHTML=`
+  document.getElementById("pannounce").innerHTML=parentSubscriptionPaid()?`
     <div class="panel"><h2>📢 إعلانات المؤسسة</h2>
     ${announcements.map(a=>`<div class="notice b"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(a.title)}</b><span class="muted">${esc(a.time||"")}</span></div><div style="margin-top:5px;font-size:13px">${esc(a.body)}</div></div>`).join("")||'<div class="muted">لا إعلانات منشورة بعد.</div>'}
-    </div>`;
+    </div>`:parentPaidLockedHTML("الإعلانات والخدمات الأخرى");
   document.getElementById("paccount").innerHTML=`
+    ${parentSubscriptionBannerHTML()}
+    ${parentFeaturesTableHTML()}
     <div class="panel"><h2>⚙️ حسابي</h2>
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>معرِّف الدخول</span><b class="code">${esc((CURRENT_USER&&CURRENT_USER.loginId)||"—")}</b></div>
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>المؤسسة</span><b>${esc(CURRENT_SCHOOL)}</b></div>
-      <div style="display:flex;justify-content:space-between;padding:10px 0"><span>الاشتراك</span><b>${sub&&sub.paid_until?"سارٍ حتى "+esc(String(sub.paid_until).slice(0,10)):"غير مسجَّل بعد"}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:10px 0"><span>حالة الحساب</span><b>${parentSubscriptionPaid()?"مدفوع · سارٍ حتى "+esc(String(sub.paid_until).slice(0,10)):"مجاني · مفعّل تلقائيًا عند فتح الحساب"}</b></div>
       ${sub&&sub.receipt_no?`<div class="muted" style="margin-top:6px">وصل رقم ${esc(sub.receipt_no)}${sub.amount_dzd?" · "+sub.amount_dzd+" دج":""}</div>`:""}
       <div class="notice b" style="margin-top:10px">عرض الخطط لا يفعّل الاشتراك تلقائيًا. تفعيل التجديد وتسليم الوصل من مسؤول المالية في المؤسسة فقط.</div>
     </div>

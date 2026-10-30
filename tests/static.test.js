@@ -588,6 +588,12 @@ function main() {
       "renderParentWing معرَّفة **ومُناداة** (تعريفٌ بلا نداء لا يُظهر شيئًا)");
     chk(/اختيار خطة الاشتراك/.test(HTML) && /requestParentPlan/.test(HTML),
       "جناح وليّ الأمر يعرض خطط الاشتراك ويتيح اختيار خطة دون تفعيلها ذاتيًّا");
+    chk(/parentSubscriptionBannerHTML/.test(HTML) && /مقارنة مميزات حساب وليّ الأمر/.test(HTML) && /مجاني مفعّل تلقائيًا/.test(HTML),
+      "تظهر حالة الحساب المجاني جدياً في أعلى التطبيق مع جدول مقارنة المميزات بعد الدخول");
+    chk(/تنبيه دخول التلميذة/.test(HTML) && /تنبيه التأخر والغياب/.test(HTML) && /تنبيه الاستدعاء/.test(HTML) && /النقاط والمعدلات والرتبة/.test(HTML),
+      "الإشعارات الأساسية مجانية والنقاط والخدمات الأخرى واضحة كخدمات مدفوعة");
+    chk(/parentPaidLockedHTML/.test(HTML) && /parentSubscriptionPaid/.test(HTML),
+      "خدمات الحساب المدفوع مقفلة في واجهة وليّ الأمر حتى تفعيل اشتراك فعلي");
     chk(/if\(k==="parent"\)\{/.test(HTML), "وapplyRole تُوجّه دور parent إلى جناحه");
     chk(/r\.role==="student"\|\|r\.role==="parent"/.test(HTML),
       "وdoLogin تُعرِّف meStudent للوليّ أيضًا (وإلّا بقيت الشاشة فارغة)");
