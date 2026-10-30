@@ -520,6 +520,10 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     <div class="hero">
       <div class="htxt"><b>🚪 بوابة المؤسسة — المدخل الرئيسي</b><p>امسحي براسليّ التلميذة بكاميرا الهاتف، أو أدخلي رقم بطاقتها يدويًّا.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="actions" aria-label="اتجاه عبور البوابة">
+          <button class="btn primary" id="gateEntryBtn" onclick="setGateDirection('entry')">🟢 دخول</button>
+          <button class="btn" id="gateExitBtn" onclick="setGateDirection('exit')">🔴 خروج</button>
+        </div>
         <button class="scan-btn" onclick="openScanner()"><span class="rf">📷</span> مسح بالكاميرا</button>
         <button class="scan-btn" id="demoScanBtn" onclick="simulateScan()"><span class="rf">📶</span> محاكاة (عرض تجريبي)</button>
       </div>
@@ -558,6 +562,19 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
       <div style="max-height:58vh;overflow:auto">
         <table id="prTable"><thead><tr><th>التلميذة</th><th>وليّ الأمر</th><th>الهاتف</th><th>وسيلة الإشعار</th><th>الحالة</th></tr></thead><tbody></tbody></table>
       </div>
+    </div>
+    <div class="panel" id="parentSubscriptionAdmin" style="display:none">
+      <h2>💳 تفعيل اشتراك وليّ الأمر</h2>
+      <p class="muted" style="margin-top:0">التفعيل من مسؤول المدير أو الأمانة فقط، بعد قبض المبلغ وتسجيل رقم الوصل.</p>
+      <div class="actions" style="gap:8px;flex-wrap:wrap">
+        <input id="subParentPhone" class="search" style="min-width:220px" placeholder="رقم هاتف الولي، مثل 0551234567" aria-label="رقم هاتف الولي">
+        <input id="subPaidUntil" class="search" style="min-width:180px" type="date" aria-label="آخر يوم للاشتراك">
+        <input id="subAmount" class="search" style="min-width:140px" type="number" min="0" placeholder="المبلغ بالدينار" aria-label="مبلغ الاشتراك">
+        <input id="subReceipt" class="search" style="min-width:180px" placeholder="رقم الوصل" aria-label="رقم وصل الدفع">
+        <button class="btn primary" onclick="activateParentSubscription()">تفعيل الاشتراك</button>
+        <button class="btn" onclick="deactivateParentSubscription()">إلغاء الاشتراك الحالي</button>
+      </div>
+      <div id="subscriptionAdminList" style="margin-top:12px"></div>
     </div>
   </section>
 
@@ -860,7 +877,17 @@ let students=[], teachers=[], gateLog=[], notifs=[], nextId=1, nextCard=11;
 /* سجلّ البوابة على مستويين: `gateLog` عرض اليوم (وفيه العبورات المحلّية التي
    لم تصل الخادم بعد)، و`GATE_ALL` صفوف الخادم لكلّ الأيام (لفلتر التاريخ
    والتصدير)، و`GATE_DAY` اليوم المعروض. */
-let GATE_ALL=[], GATE_DAY="";
+let GATE_ALL=[], GATE_DAY="", GATE_DIRECTION="entry";
+
+function setGateDirection(direction){
+  if(direction!=="entry"&&direction!=="exit") return;
+  GATE_DIRECTION=direction;
+  const entry=document.getElementById("gateEntryBtn"), exit=document.getElementById("gateExitBtn");
+  if(entry){entry.className=direction==="entry"?"btn primary":"btn";}
+  if(exit){exit.className=direction==="exit"?"btn primary":"btn";}
+  toast(direction==="entry"?"وضع الدخول 🟢":"وضع الخروج 🔴",
+    direction==="entry"?"ستسجّل عمليات المسح كدخول إلى المؤسسة":"ستسجّل عمليات المسح كخروج من المؤسسة",direction==="entry"?"g":"y");
+}
 
 /* أرقام البطاقات: RF-0011 لا RF-001240. الصيغة القديمة "RF-00"+(nextCard++)
    لصقت بادئةً ثابتة برقم متغيّر الطول، فخرجت بطاقة **إبنتها** RF-001542:
@@ -1147,6 +1174,11 @@ function render(){
   // Parents
   document.querySelector("#prTable tbody").innerHTML=students.map(st=>
     `<tr><td>${st.name}</td><td>${st.parent}</td><td>${ltr(fmtPhone(st.phone))}</td><td>${st.notify}</td><td><span class="pill ok">مفعّل</span></td></tr>`).join("");
+  const subAdmin=document.getElementById("parentSubscriptionAdmin");
+  if(subAdmin){
+    subAdmin.style.display=["director","reception"].includes(currentRole)?"block":"none";
+    if(subAdmin.style.display==="block") refreshParentSubscriptionAdmin();
+  }
 
   // Notifications
   renderNotifs();
@@ -1309,10 +1341,13 @@ function renderGateLog(){
     }else sel.value=GATE_DAY;
   }
   const rows=gateRowsFor(GATE_DAY);
-  box.innerHTML=rows.length?rows.slice(0,100).map(g=>
-    `<div class="notice ${g.late?'y':'g'}">${ltr(g.time)} · ${g.name} · ${g.cls} · `+
-    `${g.late?'⏰ دخول متأخّر':'🟢 دخول في الوقت'} · `+
-    `<span class="pill pend">${methodLabel(g.method)}</span></div>`).join("")
+  box.innerHTML=rows.length?rows.slice(0,100).map(g=>{
+    const direction=String(g.direction||"entry")=== "exit"?"خروج":"دخول";
+    const state=direction=== "خروج"?`🔴 خروج · ${ltr(g.time)}`:(g.late?'⏰ دخول متأخر · '+ltr(g.time):'🟢 دخول في الوقت · '+ltr(g.time));
+    return `<div class="notice ${direction==='خروج'?'y':(g.late?'y':'g')}">${state} · ${g.name} · ${g.cls} · `+
+    `<span class="pill pend">${methodLabel(g.method)}</span></div>`;
+  }).join("")
+  
     :'<div class="notice">لا عبورات مسجَّلة في هذا اليوم.</div>';
 }
 function setGateDay(d){ GATE_DAY=d; renderGateLog(); }
@@ -1323,8 +1358,8 @@ function exportGateCsv(){
   const day=GATE_DAY||todayISO();
   const rows=gateRowsFor(day);
   const cell=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
-  const lines=[["اليوم","الساعة","التلميذة","القسم","الحالة","الطريقة"]]
-    .concat(rows.map(g=>[day,g.time,g.name,g.cls,g.late?"متأخّرة":"في الوقت",methodLabel(g.method)]));
+  const lines=[["اليوم","الساعة","الاتجاه","التلميذة","القسم","الحالة","الطريقة"]]
+    .concat(rows.map(g=>[day,g.time,String(g.direction||"entry")=== "exit"?"خروج":"دخول",g.name,g.cls,g.late?"متأخّرة":"في الوقت",methodLabel(g.method)]));
   const csv="﻿"+lines.map(a=>a.map(cell).join(",")).join("\r\n");
   try{
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
@@ -1337,30 +1372,56 @@ function exportGateCsv(){
   }catch(e){ toast("تعذّر التصدير",String(e.message||e),"a"); }
 }
 
-/* تسجيل عبورٍ واحد — المسارات الأربعة تمرّ من هنا فلا تختلف قواعدها. */
+/* تسجيل عبورٍ واحد — الدخول والخروج من مسار واحد، مع منع التكرار الزمني. */
 function recordCrossing(st,method){
   if(!st) return false;
   method=GATE_METHODS[method]?method:"manual";
-  const t=new Date();
-  const hm=pad(t.getHours())+":"+pad(t.getMinutes());
-  const isLate=isLateAt(t);
-  st.state=isLate?"late":"present"; st.time=hm;
-  const clientId=newClientId(), day=isoOf(t);
-  gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate,method,day,clientId});
+  const direction=GATE_DIRECTION;
+  const t=new Date(), hm=pad(t.getHours())+":"+pad(t.getMinutes());
+  const isLate=direction=== "entry" && isLateAt(t), day=isoOf(t);
+  const crossingToday=(Array.isArray(GATE_ALL)?GATE_ALL:[])
+    .filter(x=>x.student_id===st.id&&String(x.day||"")===day)
+    .concat((Array.isArray(gateLog)?gateLog:[])
+      .filter(x=>String(x.name||"")===String(st.name||"")&&String(x.day||day)===day));
+  const latest=crossingToday.sort((a,b)=>String(b.at_time||"").localeCompare(String(a.at_time||"")))[0];
+  if(latest&&String(latest.direction||"entry")===direction){
+    toast(direction=== "entry"?"الدخول مسجّل بالفعل":"الخروج مسجّل بالفعل",
+      `${st.name} — لا تُسجّل ${direction==="entry"?"الدخول":"الخروج"} مرتين لنفس العبَر.`,"a");
+    return false;
+  }
+  if(direction=== "exit"&&!crossingToday.some(x=>String(x.direction||"entry")==="entry")){
+    toast("لا يمكن تسجيل الخروج","يجب تسجيل دخول التلميذة أولًا قبل تسجيل خروجها.","a");
+    return false;
+  }
+  if(direction=== "entry"){
+    st.state=isLate?"late":"present"; st.time=hm;
+  }
+  const clientId=newClientId();
+  gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate,method,day,clientId,direction});
   GATE_DAY=day;
-  /* العبور يُسجَّل مرّتين، وهما ليسا تكرارًا بل **دقّة مختلفة**:
-     `attendance` صفٌّ واحد لليوم (حالة التلميذة اليوم)، و`gate_log` أثرُ كلّ
-     عبور على حِدة (وقد تعبر مرّتين، وتتأخّر). */
-  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day,late:isLate,method,client_id:clientId}));
-  /* أثر العبور للجميع (الأمانة لها `gate_write`)؛ أمّا **حضور اليوم** فشأن من
-     يملك `can_record` — والخادم يرفضه من الأمانة رفضًا مؤكّدًا. لا نُرسل ما نعلم
-     أنّه سيُردّ: البوابة أثرُ عبور، والحضور سجلّ المعلّمة. */
-  if(canRecord(currentRole))
-    enqueue("attendance", rowFor("attendance",{student_id:st.id,day:todayISO(),state:st.state,at_time:hm}));
-  notifs.unshift({time:hm,type:isLate?"late":"entry",text:`تمّ إشعار ${st.parent}: دخلت ابنته ${st.name} (${st.cls}) المدرسة الساعة ${hm}${isLate?" — دخول متأخّر":""}.`});
+  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day,late:isLate,method,client_id:clientId,direction}));
+  if(canRecord(currentRole)&&direction=== "entry")
+    enqueue("attendance", rowFor("attendance",{student_id:st.id,day,state:st.state,at_time:hm,entry_time:hm}));
+  else if(canRecord(currentRole)&&direction=== "exit")
+    enqueue("attendance", rowFor("attendance",{student_id:st.id,day,state:st.state||"present",exit_time:hm}));
+  const notificationText=direction=== "entry"
+    ? `دخلت ابنتكم ${st.name} (${st.cls}) إلى المؤسسة الساعة ${hm}${isLate?" — دخول متأخّر":""}.`
+    : `غادرت ابنتكم ${st.name} (${st.cls}) المؤسسة الساعة ${hm}.`;
+  const notificationKind=direction=== "entry"?(isLate?"late":"entry"):"exit";
+  notifs.unshift({time:hm,type:notificationKind,text:notificationText});
   unread++;
+  if(SYNC.mode=== "remote"){
+    enqueue("notifications",rowFor("notifications",{student_id:st.id,kind:notificationKind,body:notificationText,at_time:hm}));
+    enqueue("outbox",rowFor("outbox",{
+      student_id:st.id,channel:"whatsapp",
+      phone:st.phone||st.parentPhone||null,recipient:st.parent||null,
+      body:notificationText,client_id:newClientId()
+    }));
+  }
+  publishCrossingLiveUpdate({student_id:st.id,name:st.name,cls:st.cls,at_time:hm,late:isLate,state:st.state,direction});
   render();
-  toast(isLate?"دخول متأخّر ⏰":"دخول في الوقت 🟢",`${st.name} · ${st.cls} · ${hm} · ${methodLabel(method)}`, isLate?"y":"g");
+  toast(direction=== "entry"?(isLate?"دخول متأخّر ⏰":"دخول في الوقت 🟢"):"خروج مسجّل 🔴",
+    `${st.name} · ${st.cls} · ${hm} · ${methodLabel(method)}`,direction=== "exit"?"y":(isLate?"y":"g"));
   return true;
 }
 
@@ -1383,9 +1444,15 @@ function recordCardInput(){
 /* المحاكاة — عرضٌ تجريبيّ فقط: تختار عشوائيًّا. تُخفى في الوضع الموصول
    (انظر renderSystemStatus) لأنّها كانت تكتب تلميذةً عشوائية في الخادم. */
 function simulateScan(){
-  let cand=students.filter(s=>s.state==="pending");
-  if(!cand.length) cand=students.filter(s=>s.state==="absent");
-  if(!cand.length){toast("البوابة","جميع التلميذات دخلن اليوم ✅","g");return;}
+  let cand;
+  if(GATE_DIRECTION=== "exit"){
+    cand=students.filter(s=>s.state==="present"||s.state==="late");
+    if(!cand.length){toast("البوابة","لا توجد تلميذات مسجّلات دخولًا حاليًا.","a");return;}
+  }else{
+    cand=students.filter(s=>s.state==="pending");
+    if(!cand.length) cand=students.filter(s=>s.state==="absent");
+    if(!cand.length){toast("البوابة","جميع التلميذات دخلن اليوم ✅","g");return;}
+  }
   recordCrossing(pick(cand),"simulated");
 }
 
@@ -1723,6 +1790,7 @@ async function doLogin(){
        عليه (سياسة `gate_read` تشترط `is_staff`)، وكان `applyRole` يأتي بعدها
        ⇒ تُقيس دورَ الجلسة السابقة لا دورَ من دخل للتوّ. */
     currentRole=r.role;
+    setupCrossingLiveSync();
 
     /* الجلب **قبل** أوّل عرض: بدونه تومض بيانات محلّية مولَّدة ثم تُستبدَل،
        فترى المستخدمة أرقامًا ليست لها لحظةً كاملة. الترتيب هنا مقصود. */
@@ -2535,6 +2603,46 @@ function requestParentPlan(plan,amount){
   try{ localStorage.setItem("eduvia.parentPlanChoice",JSON.stringify({plan,amount,login,at:new Date().toISOString()})); }catch(e){}
   toast("تم اختيار الخطة",""+plan+" — "+amount+" دج. راجعي أمانة المؤسسة للتجديد؛ لا يفعّل الاختيار الاشتراك تلقائيًا.","b");
 }
+function canonParentPhone(phone){
+  return String(phone||"").replace(/[^0-9]/g,"").replace(/^2130?/,(m)=>m.startsWith("213")?"0":"").slice(0,20);
+}
+async function activateParentSubscription(){
+  const phone=(document.getElementById("subParentPhone")||{}).value||"";
+  const paidUntil=(document.getElementById("subPaidUntil")||{}).value||"";
+  const amount=Number((document.getElementById("subAmount")||{}).value||0);
+  const receipt=((document.getElementById("subReceipt")||{}).value||"").trim();
+  if(!["director","reception"].includes(currentRole)){toast("غير مصرح","التفعيل للمدير أو الأمانة فقط.","a");return;}
+  const canonical=canonParentPhone(phone);
+  if(!canonical||!/^0?[0-9]{8,15}$/.test(canonical)||!paidUntil){toast("بيانات ناقصة","أدخلي رقم الهاتف وتاريخ انتهاء صحيحين.","a");return;}
+  const client=await ensureClient(); if(!client){toast("الوضع المحلّي","التفعيل الحقيقي يحتاج حساب Supabase متصلًا.","a");return;}
+  const profile=await client.from("profiles").select("id,login_id,display_name,school_id,role").eq("login_id",canonical).eq("role","parent").limit(1);
+  if(profile.error||!profile.data||!profile.data.length){toast("الوليّ غير موجود","تحقّقي من رقم الهاتف الموحد لحساب الوليّ.","a");return;}
+  const p=profile.data[0];
+  const upsert=await client.from("guardians_subscription").upsert({profile_id:p.id,paid_until:paidUntil,amount_dzd:Number.isFinite(amount)?amount:null,receipt_no:receipt||null,recorded_by:SYNC.uid||null},{onConflict:"profile_id"});
+  if(upsert.error){toast("تعذّر التفعيل",upsert.error.message||String(upsert.error),"a");return;}
+  toast("تم تفعيل الاشتراك ✅",`${p.display_name||canonical} — ساري حتى ${paidUntil}`,"g");
+  await refreshParentSubscriptionAdmin();
+}
+async function deactivateParentSubscription(){
+  if(!["director","reception"].includes(currentRole)){toast("غير مصرح","الإلغاء للمدير أو الأمانة فقط.","a");return;}
+  const phone=canonParentPhone((document.getElementById("subParentPhone")||{}).value||"");
+  if(!phone){toast("رقم ناقص","أدخلي رقم هاتف الوليّ المراد إلغاء اشتراكه.","a");return;}
+  const client=await ensureClient(); if(!client){toast("الوضع المحلّي","الإلغاء الحقيقي يحتاج حساب Supabase متصلًا.","a");return;}
+  const profile=await client.from("profiles").select("id").eq("login_id",phone).eq("role","parent").limit(1);
+  if(profile.error||!profile.data||!profile.data.length){toast("الوليّ غير موجود","تحقّقي من رقم الهاتف.","a");return;}
+  const removed=await client.from("guardians_subscription").delete().eq("profile_id",profile.data[0].id);
+  if(removed.error){toast("تعذّر الإلغاء",removed.error.message||String(removed.error),"a");return;}
+  toast("تم إلغاء الاشتراك","عاد الحساب إلى الحالة المجانية عند تحديث صفحات الوليّ.","g");
+  await refreshParentSubscriptionAdmin();
+}
+async function refreshParentSubscriptionAdmin(){
+  const box=document.getElementById("subscriptionAdminList"); if(!box) return;
+  if(!["director","reception"].includes(currentRole)){box.innerHTML="";return;}
+  const client=await ensureClient(); if(!client){box.innerHTML='<div class="notice y">الوضع المحلي لا يفعّل اشتراكًا رسميًا.</div>';return;}
+  const r=await client.from("guardians_subscription").select("profile_id,paid_until,amount_dzd,receipt_no,profiles(login_id,display_name)").order("paid_until",{ascending:false});
+  if(r.error){box.innerHTML='<div class="notice y">لم تُحمّل الاشتراكات بعد. تأكدي من تشغيل sql/007 وsql/009.</div>';return;}
+  box.innerHTML=(r.data||[]).length?`<div style="overflow:auto"><table><thead><tr><th>الوليّ</th><th>الهاتف</th><th>آخر يوم</th><th>المبلغ</th><th>الوصل</th></tr></thead><tbody>${r.data.map(s=>{const p=(s.profiles&&s.profiles[0])||s.profiles||{};return `<tr><td>${esc(p.display_name||"—")}</td><td class="ltr">${esc(p.login_id||"—")}</td><td>${esc(s.paid_until)}</td><td>${s.amount_dzd||0} دج</td><td>${esc(s.receipt_no||"—")}</td></tr>`;}).join("")}</tbody></table></div>`:'<div class="muted">لا اشتراكات مدفوعة مسجّلة حاليًا.</div>';
+}
 function parentSubscriptionPaid(){
   const until=SYNC.subscription&&SYNC.subscription.paid_until?String(SYNC.subscription.paid_until):"";
   if(!until) return false;
@@ -3047,7 +3155,7 @@ const CAN_RECORD_ROLES=new Set(["director","teacher","supervisor"]);
 const STAFF_ROLES=new Set(["director","teacher","supervisor","reception"]);
 const isStaffRole=r=>STAFF_ROLES.has(r);
 const canRecord=(role)=>CAN_RECORD_ROLES.has(role);
-const MSG_CHANNEL_DB={app:"app",sms:"sms",call:"call"};
+const MSG_CHANNEL_DB={app:"app",sms:"sms",call:"call",whatsapp:"whatsapp"};
 
 /* ------------------------------------------------------- معبر المعرّفات
    الواجهة تعمل بمعرّفات **رقمية** (1, 2, 3…) لأنها وُلدت بلا خادم، والخادم
@@ -3120,7 +3228,9 @@ function rowFor(table,o){
          المجهولة تُسقَط كما تُسقَط التلميذة المجهولة: لا تُخترع. */
       const state=ATT_STATE_DB[o.state]; if(!state) return null;
       return {student_id:sid, day:o.day,
-              state, at_time:o.at_time==null?null:o.at_time, client_id:o.client_id};
+              state, at_time:o.at_time==null?null:o.at_time, client_id:o.client_id,
+              entry_time:o.entry_time==null?null:o.entry_time,
+              exit_time:o.exit_time==null?null:o.exit_time};
     }
 
     /* النقاط — **أوّل كتابة لها** (كانت تُقرأ ولا تُكتب).
@@ -3165,7 +3275,7 @@ function rowFor(table,o){
     case "gate_log":{
       const sid=sidOrNull(o.student_id); if(sid===false) return null;
       const row={student_id:sid, at_time:o.at_time, day:o.day,
-                 late:!!o.late, client_id:o.client_id};
+                 late:!!o.late, client_id:o.client_id, direction:o.direction||"entry"};
       /* تُحفظ الطريقة في الطابور حتى بلا شبكة. حارس العمود يُطبَّق عند
          الإرسال؛ والحالة false تستبعدها فورًا إذا ثبت غياب sql/008. */
       if(o.method && SYNC.gateMethodMeta===false) {
@@ -3678,7 +3788,7 @@ async function hydrate(){
         const s=students.find(x=>x.cloudId===r.student_id);
         if(!s) return null;
         return {day:String(r.day||"").slice(0,10),time:r.at_time,name:s.name,cls:s.cls,
-                late:!!r.late,method:r.method||""};
+                late:!!r.late,method:r.method||"",direction:r.direction||"entry"};
       }).filter(Boolean)
         .sort((a,b)=>(b.day+String(b.time)).localeCompare(a.day+String(a.time)));
       /* عرض اليوم يبقى من `gateLog` (فيه ما لم يُزامَن بعد)، ويُبنى من صفوف
@@ -3894,6 +4004,43 @@ let _lastRefresh=0;
 function userIsTyping(){
   const a=document.activeElement, t=a&&a.tagName;
   return t==="INPUT"||t==="TEXTAREA"||t==="SELECT"||!!(a&&a.isContentEditable);
+}
+
+let CROSSING_LIVE_CHANNEL=null, _crossingLiveSetup=false;
+function publishCrossingLiveUpdate(payload){
+  const event={version:1,at:Date.now(),payload};
+  try{ localStorage.setItem("eduvia.crossing.live",JSON.stringify(event)); }catch(e){}
+  try{ if(CROSSING_LIVE_CHANNEL) CROSSING_LIVE_CHANNEL.postMessage(event); }catch(e){}
+}
+async function setupCrossingLiveSync(){
+  if(_crossingLiveSetup) return;
+  _crossingLiveSetup=true;
+  try{
+    if(typeof BroadcastChannel!=="undefined"){
+      CROSSING_LIVE_CHANNEL=new BroadcastChannel("eduvia-live-crossings");
+      CROSSING_LIVE_CHANNEL.onmessage=()=>{ refreshFromServer(true); };
+    }
+  }catch(e){ CROSSING_LIVE_CHANNEL=null; }
+  window.addEventListener("storage",e=>{
+    if(e.key==="eduvia.crossing.live") refreshFromServer(true);
+  });
+  if(SYNC.mode==="remote"){
+    const client=await ensureClient();
+    if(client&&typeof client.channel==="function"){
+      const live=client.channel("eduvia-live-crossings");
+      live.on("postgres_changes",{event:"INSERT",schema:"public",table:"gate_log"},()=>{
+        publishCrossingLiveUpdate({table:"gate_log",at:Date.now()}); refreshFromServer(true);
+      });
+      live.on("postgres_changes",{event:"*",schema:"public",table:"attendance"},()=>{
+        publishCrossingLiveUpdate({table:"attendance",at:Date.now()}); refreshFromServer(true);
+      });
+      live.on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>{
+        publishCrossingLiveUpdate({table:"notifications",at:Date.now()}); refreshFromServer(true);
+      });
+      live.subscribe();
+    }
+  }
+  setInterval(()=>{ refreshFromServer(true); },5000);
 }
 async function refreshFromServer(force){
   if(SYNC.mode!=="remote"||!SYNC.online) return;

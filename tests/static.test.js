@@ -648,6 +648,10 @@ function main() {
     const rf = fn("refreshFromServer") || "";
     chk(/renderParentWing\(\)/.test(rf) && /renderStudentWing\(\)/.test(rf),
       "والتحديث الخلفيّ يُعيد رسم الجناحين (render تبني شاشات الطاقم وحدها)");
+    chk(/BroadcastChannel/.test(HTML) && /postgres_changes/.test(HTML) && /setInterval\(.*5000/.test(HTML),
+      "التحديث اللحظي مشترك عبر BroadcastChannel وSupabase Realtime مع احتياط فحص كل 5 ثوانٍ (دون إعادة تحميل)");
+    chk(/enqueue\("notifications"/.test(HTML) && /publishCrossingLiveUpdate/.test(HTML) && /setupCrossingLiveSync/.test(HTML),
+      "مسح البوابة ينشئ إشعار وليّ الأمر ويصدر حدث تحديث لحظي ويحمل المزامنة التلقائية عند التشغيل");
     chk(/unlinkedHTML\(\)/.test(fn("renderStudentWing") || ""),
       "وتلميذةٌ بلا سجلّ ترى رسالةً صريحة لا صفحةً بيضاء");
     /* الحارس يقيس **السياسة** لا الكلمة: التعليق في الملفّ يذكر «الحجب» شرحًا،
