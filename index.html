@@ -102,7 +102,7 @@ html[data-theme="dark"] .syncchip.off{color:#f08a8a}
 .trial{background:var(--late-bg);color:var(--late);padding:8px 13px;border-radius:20px;font-size:12px;font-weight:700}
 
 /* ===== Cards / KPI ===== */
-.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:18px}
+.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:18px}.parent-plans{grid-template-columns:repeat(3,minmax(0,1fr))}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
 .card .label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}
 .card .value{font-size:26px;font-weight:800;margin-top:9px}
@@ -190,7 +190,10 @@ body.has-install #toasts{bottom:78px}
 .demo-tag{position:fixed;bottom:14px;inset-inline-end:14px;background:var(--late-bg);color:var(--late);font-size:11px;font-weight:700;padding:7px 12px;border-radius:20px;z-index:40;box-shadow:var(--shadow)}
 
 @media(max-width:1100px){.cards{grid-template-columns:repeat(3,1fr)}.grid2{grid-template-columns:1fr}}
-@media(max-width:760px){.sidebar{inset-inline-start:auto;position:relative;width:100%;height:auto}.main{margin:0;padding:16px}.cards{grid-template-columns:repeat(2,1fr)}.demo-tag{display:none}}
+@media(max-width:760px){.sidebar{inset-inline-start:auto;position:relative;width:100%;height:auto}.main{margin:0;padding:16px}.cards{grid-template-columns:repeat(2,1fr)}.parent-plans{grid-template-columns:1fr!important}.demo-tag{display:none}}
+.parent-app-shell #login{background:linear-gradient(135deg,#16366B 0%,#1E8FD0 55%,#34B45E 100%)}
+.parent-app-shell #login .box{max-width:420px;border-radius:22px}.parent-app-shell .demoacc{display:none}
+.parent-app-shell .sidebar{box-shadow:0 4px 18px rgba(22,54,107,.18)}
 
 /* ===== Academic / added modules ===== */
 .sel{padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:13px;font-family:inherit}
@@ -531,8 +534,14 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     </div>
     <div class="cards" id="gateKpi" style="grid-template-columns:repeat(4,1fr)"></div>
     <div class="panel">
-      <h2>📜 سجلّ آخر العمليات</h2>
+      <div class="section-head"><h2>📜 سجلّ العمليات</h2>
+        <div class="actions">
+          <select class="sel" id="gateDay" onchange="setGateDay(this.value)" aria-label="اليوم المعروض"></select>
+          <button class="btn" onclick="exportGateCsv()">⬇️ تصدير CSV</button>
+        </div>
+      </div>
       <div id="gateLog"></div>
+      <div class="muted" style="margin-top:8px">تُحفظ مع كلّ عبور <b>طريقته</b>: 📷 مسح QR · ⌨️ إدخال يدوي · ✅ تحضير. الصفوف الأقدم من <span class="code">sql/008_gate_method.sql</span> تظهر «غير مسجَّل» بصدق.</div>
     </div>
     <div id="scanBox" style="display:none;position:fixed;inset:0;background:rgba(8,15,30,.94);z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px">
       <div style="color:#fff;font-size:15px;font-weight:700;text-align:center">وجّهي الكاميرا إلى رمز QR على براسليّ التلميذة</div>
@@ -643,7 +652,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     <div class="panel">
       <h2>📲 نشر تطبيق الأولياء</h2>
       <p class="muted" style="margin:0 0 12px">أدخل رابط تطبيق الأولياء (بعد نشره على الإنترنت) لتوليد رمز QR ولافتة قابلة للطباعة تُعلَّق للأولياء — يمسحونها فيُثبّتون التطبيق دون نسخ أي رابط.</p>
-      <input class="search" id="parentUrl" value="https://brandheroman4.github.io/eduvia-parent-app/" aria-label="رابط تطبيق الأولياء" style="margin-bottom:10px">
+      <input class="search" id="parentUrl" value="https://brandheroman4.github.io/smart-school-demo/parent-app.html" aria-label="رابط تطبيق الأولياء" style="margin-bottom:10px">
       <div class="actions"><button class="btn primary" onclick="genParentQR()">🔳 توليد الرمز</button><button class="btn" onclick="printParentPoster()">🖨️ طباعة لافتة A4</button></div>
       <div id="parentQR" style="margin-top:16px;display:flex;flex-wrap:wrap;justify-content:center"></div>
     </div>
@@ -848,6 +857,10 @@ const ltr=s=>`<span class="ltr">${s}</span>`;
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 let students=[], teachers=[], gateLog=[], notifs=[], nextId=1, nextCard=11;
+/* سجلّ البوابة على مستويين: `gateLog` عرض اليوم (وفيه العبورات المحلّية التي
+   لم تصل الخادم بعد)، و`GATE_ALL` صفوف الخادم لكلّ الأيام (لفلتر التاريخ
+   والتصدير)، و`GATE_DAY` اليوم المعروض. */
+let GATE_ALL=[], GATE_DAY="";
 
 /* أرقام البطاقات: RF-0011 لا RF-001240. الصيغة القديمة "RF-00"+(nextCard++)
    لصقت بادئةً ثابتة برقم متغيّر الطول، فخرجت بطاقة **إبنتها** RF-001542:
@@ -904,7 +917,7 @@ function buildData(){
     ["السيدة زهية","مديرة المؤسسة","الإدارة"]];
   teachers=T.map(t=>({name:t[0],role:t[1],cls:t[2]}));
   // سجلّ البوابة الأولي = الوافدات مرتّبة
-  gateLog=students.filter(s=>s.time).map(s=>({time:s.time,name:s.name,cls:s.cls,late:s.state==="late"}))
+  gateLog=students.filter(s=>s.time).map(s=>({time:s.time,name:s.name,cls:s.cls,late:s.state==="late",method:"simulated"}))
     .sort((a,b)=>b.time.localeCompare(a.time));
   // إشعار نظام
   /* إشعار البدء. كان يقول «تمّت مزامنة آخر العمليات مع الخادم المحلي بنجاح»
@@ -1129,8 +1142,7 @@ function render(){
   /* «متّصل» كانت مكتوبة حرفيًّا وما ثمّ جهاز — تناقضٌ مع إعلان UNBACKED.gate
      فوقها. هذا موضع حالة الجهاز حين يُوصَل فعلًا. */
   document.getElementById("gateKpi").innerHTML=`${kpiCard("الجهاز","⚪","غير موصول","")}${kpiCard("دخلن اليوم","🚪",s.arrived,"")}${kpiCard("آخر عملية","🕐",gateLog[0]?gateLog[0].time:"—","")}${kpiCard("متأخّرات","⏰",s.late,"amber")}`;
-  document.getElementById("gateLog").innerHTML=gateLog.slice(0,14).map(g=>
-    `<div class="notice ${g.late?'y':'g'}">${ltr(g.time)} · ${g.name} · ${g.cls} · ${g.late?'⏰ دخول متأخّر':'🟢 دخول ناجح'}</div>`).join("");
+  renderGateLog();
 
   // Parents
   document.querySelector("#prTable tbody").innerHTML=students.map(st=>
@@ -1244,18 +1256,102 @@ function cardFromPayload(raw){
   return m?("RF-"+m[1].padStart(4,"0")):null;
 }
 
-/* تسجيل عبورٍ واحد — المسارات الثلاثة تمرّ من هنا فلا تختلف قواعدها. */
-function recordCrossing(st){
+/* قاعدة التأخّر واحدة لكلّ المسارات: 08:15. كانت مكرّرة في العبور، و«تحضير»
+   يكتب حاضرًا مهما كانت الساعة — فيخرج صفٌّ «في الوقت» في التاسعة مساءً. */
+const LATE_H=8, LATE_MIN=15;
+function isLateAt(t){
+  return (t.getHours()>LATE_H)||(t.getHours()===LATE_H&&t.getMinutes()>LATE_MIN);
+}
+
+/* طرق العبور — تُحفظ في `gate_log.method` (sql/008). الكاميرا والرقم المكتوب
+   والتحضير كانت تكتب صفًّا متطابقًا، فلا يُعرَف المصدر لا الآن ولا لاحقًا. */
+const GATE_METHODS={
+  qr:{ic:"📷",ar:"مسح QR"},
+  manual:{ic:"⌨️",ar:"إدخال يدوي"},
+  teacher:{ic:"✅",ar:"تحضير"},
+  simulated:{ic:"📶",ar:"محاكاة"},
+  legacy:{ic:"❔",ar:"غير مسجَّل"}
+};
+function methodLabel(m){
+  const x=GATE_METHODS[m];
+  return x?x.ic+" "+x.ar:"❔ غير مسجَّل";
+}
+
+/* صفوف اليوم المعروض: اليوم من `gateLog` (يضمّ ما لم يُزامَن بعد)، وغيره من
+   صفوف الخادم. لا نخلط بينهما: اليوم هو الوحيد الذي قد يحمل صفوفًا محلّية. */
+function gateRowsFor(day){
+  const rows=(GATE_ALL||[]).concat(gateLog);
+  const seen=new Set();
+  return rows.filter(r=>{
+    if((r.day||todayISO())!==day) return false;
+    if(r.clientId && seen.has(r.clientId)) return false;
+    if(r.clientId) seen.add(r.clientId);
+    return true;
+  }).sort((a,b)=>String(b.time).localeCompare(String(a.time)));
+}
+
+/* سجلّ البوابة على الشاشة: فلتر يوم + شارة الطريقة. تُونادى من render(). */
+function renderGateLog(){
+  const box=document.getElementById("gateLog");
+  if(!box) return;
+  const days=Array.from(new Set((GATE_ALL||[]).concat(gateLog).map(r=>r.day).filter(Boolean)));
+  if(!days.includes(todayISO())) days.push(todayISO());
+  days.sort((a,b)=>b.localeCompare(a));
+  if(!GATE_DAY||!days.includes(GATE_DAY)) GATE_DAY=todayISO();
+  const sel=document.getElementById("gateDay");
+  if(sel){
+    /* لا نُعيد بناء القائمة في كلّ رسمة: إعادة بنائها أثناء فتحها تُغلقها. */
+    const sig=days.join("|");
+    if(sel.getAttribute("data-sig")!==sig){
+      sel.innerHTML=days.map(d=>
+        `<option value="${d}"${d===GATE_DAY?" selected":""}>${d===todayISO()?"اليوم · ":""}${d}</option>`).join("");
+      sel.setAttribute("data-sig",sig);
+    }else sel.value=GATE_DAY;
+  }
+  const rows=gateRowsFor(GATE_DAY);
+  box.innerHTML=rows.length?rows.slice(0,100).map(g=>
+    `<div class="notice ${g.late?'y':'g'}">${ltr(g.time)} · ${g.name} · ${g.cls} · `+
+    `${g.late?'⏰ دخول متأخّر':'🟢 دخول في الوقت'} · `+
+    `<span class="pill pend">${methodLabel(g.method)}</span></div>`).join("")
+    :'<div class="notice">لا عبورات مسجَّلة في هذا اليوم.</div>';
+}
+function setGateDay(d){ GATE_DAY=d; renderGateLog(); }
+
+/* تصدير يومٍ واحد — البيانات تبقى على الخادم، لكن التصدير يجعلها قابلةً
+   للمراجعة خارج التطبيق (Excel). */
+function exportGateCsv(){
+  const day=GATE_DAY||todayISO();
+  const rows=gateRowsFor(day);
+  const cell=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
+  const lines=[["اليوم","الساعة","التلميذة","القسم","الحالة","الطريقة"]]
+    .concat(rows.map(g=>[day,g.time,g.name,g.cls,g.late?"متأخّرة":"في الوقت",methodLabel(g.method)]));
+  const csv="﻿"+lines.map(a=>a.map(cell).join(",")).join("\r\n");
+  try{
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=`gate-${day}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast("صُدِّر السجلّ ⬇️",`${rows.length} عبورًا في ${day}`,"g");
+  }catch(e){ toast("تعذّر التصدير",String(e.message||e),"a"); }
+}
+
+/* تسجيل عبورٍ واحد — المسارات الأربعة تمرّ من هنا فلا تختلف قواعدها. */
+function recordCrossing(st,method){
   if(!st) return false;
+  method=GATE_METHODS[method]?method:"manual";
   const t=new Date();
   const hm=pad(t.getHours())+":"+pad(t.getMinutes());
-  const isLate=(t.getHours()>8)||(t.getHours()===8&&t.getMinutes()>15);
+  const isLate=isLateAt(t);
   st.state=isLate?"late":"present"; st.time=hm;
-  gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate});
+  const clientId=newClientId(), day=isoOf(t);
+  gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate,method,day,clientId});
+  GATE_DAY=day;
   /* العبور يُسجَّل مرّتين، وهما ليسا تكرارًا بل **دقّة مختلفة**:
      `attendance` صفٌّ واحد لليوم (حالة التلميذة اليوم)، و`gate_log` أثرُ كلّ
      عبور على حِدة (وقد تعبر مرّتين، وتتأخّر). */
-  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day:todayISO(),late:isLate}));
+  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day,late:isLate,method,client_id:clientId}));
   /* أثر العبور للجميع (الأمانة لها `gate_write`)؛ أمّا **حضور اليوم** فشأن من
      يملك `can_record` — والخادم يرفضه من الأمانة رفضًا مؤكّدًا. لا نُرسل ما نعلم
      أنّه سيُردّ: البوابة أثرُ عبور، والحضور سجلّ المعلّمة. */
@@ -1264,22 +1360,23 @@ function recordCrossing(st){
   notifs.unshift({time:hm,type:isLate?"late":"entry",text:`تمّ إشعار ${st.parent}: دخلت ابنته ${st.name} (${st.cls}) المدرسة الساعة ${hm}${isLate?" — دخول متأخّر":""}.`});
   unread++;
   render();
-  toast(isLate?"دخول متأخّر ⏰":"دخول ناجح 🟢",`${st.name} · ${st.cls} · ${hm}`, isLate?"y":"g");
+  toast(isLate?"دخول متأخّر ⏰":"دخول في الوقت 🟢",`${st.name} · ${st.cls} · ${hm} · ${methodLabel(method)}`, isLate?"y":"g");
   return true;
 }
 
-/* رقمٌ مقروء ⇒ تلميذة ⇒ عبور. والبطاقة المجهولة **تُرفَض** ولا تُخمَّن. */
-function recordByCard(raw){
+/* رقمٌ مقروء ⇒ تلميذة ⇒ عبور. والبطاقة المجهولة **تُرفَض** ولا تُخمَّن.
+   `method` يُمرَّر كما هو: "qr" من الكاميرا، "manual" من الكتابة اليدوية. */
+function recordByCard(raw,method){
   const card=cardFromPayload(raw);
   if(!card){ toast("بطاقة غير مقروءة","الرمز لا يحمل رقم بطاقة صالحًا (مثل RF-0001).","a"); return false; }
   const up=String(card).toUpperCase();
   const st=students.find(s=>String(s.card||"").toUpperCase()===up);
   if(!st){ toast("بطاقة مجهولة",`${card} لا تطابق تلميذةً في هذه المؤسسة.`,"a"); return false; }
-  return recordCrossing(st);
+  return recordCrossing(st,method||"manual");
 }
 function recordCardInput(){
   const el=document.getElementById("cardInput");
-  recordByCard((el&&el.value)||"");
+  recordByCard((el&&el.value)||"","manual");
   if(el){ el.value=""; el.focus(); }
 }
 
@@ -1289,7 +1386,7 @@ function simulateScan(){
   let cand=students.filter(s=>s.state==="pending");
   if(!cand.length) cand=students.filter(s=>s.state==="absent");
   if(!cand.length){toast("البوابة","جميع التلميذات دخلن اليوم ✅","g");return;}
-  recordCrossing(pick(cand));
+  recordCrossing(pick(cand),"simulated");
 }
 
 /* الكاميرا: BarcodeDetector الأصليّ (كروم/إيدج/أندرويد) — بلا مكتبةٍ خارجية:
@@ -1319,7 +1416,7 @@ async function openScanner(){
         const codes=await detector.detect(v);
         if(codes&&codes.length){
           const card=cardFromPayload(codes[0].rawValue||"");
-          if(card){ closeScanner(); recordByCard(card); return; }
+          if(card){ closeScanner(); recordByCard(card,"qr"); return; }
         }
       }catch(e){ /* إطارٌ فشل لا يُسقط القارئ كلّه */ }
       _scanTimer=setTimeout(tick,350);
@@ -1338,19 +1435,27 @@ function closeScanner(){
 }
 function markPresent(id){
   const st=students.find(s=>s.id===id);if(!st)return;
-  const hm=nowHM();st.state="present";st.time=hm;
-  gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:false});
+  const t=new Date();
+  const hm=pad(t.getHours())+":"+pad(t.getMinutes());
+  /* التحضير اليدوي يخضع **لقاعدة التأخّر نفسها**. كان يكتب حاضرًا مهما كانت
+     الساعة، فيُنتج صفًّا «في الوقت» في التاسعة مساءً — والوقت هو ما يقرؤه
+     المدير في السجلّ. */
+  const isLate=isLateAt(t);
+  st.state=isLate?"late":"present";st.time=hm;
+  const clientId=newClientId(), day=isoOf(t);
+  gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate,method:"teacher",day,clientId});
+  GATE_DAY=day;
   /* تحضيرٌ يدوي = عبورٌ سُجّل بالنيابة: أثره في البوابة حقيقيّ، فيُكتب هناك
-     أيضًا. (وقد يكون حقل `late` خاطئًا — صنّفناه حاضرًا، وهو ما قِسْناه.) */
-  enqueue("gate_log", rowFor("gate_log",{student_id:id,at_time:hm,day:todayISO(),late:false}));
-  notifs.unshift({time:hm,type:"entry",text:`تحضير يدوي: سُجّلت ${st.name} (${st.cls}) حاضرةً.`});
+     أيضًا مع طريقة تسجيله ("teacher"). */
+  enqueue("gate_log", rowFor("gate_log",{student_id:id,at_time:hm,day,late:isLate,method:"teacher",client_id:clientId}));
+  notifs.unshift({time:hm,type:isLate?"late":"entry",text:`تحضير يدوي: سُجّلت ${st.name} (${st.cls}) ${isLate?"متأخّرة":"حاضرة"}.`});
   /* الحضور يذهب إلى الطابور — يُحفظ محليًا فورًا ويصل الخادم عند الشبكة.
      وبنفس حدّ البوابة: أثر العبور للجميع، وحضور اليوم لمن يملك `can_record`. */
   if(canRecord(currentRole))
     enqueue("attendance", rowFor("attendance",{
-      student_id:id, day:todayISO(), state:"present", at_time:hm
+      student_id:id, day:todayISO(), state:isLate?"late":"present", at_time:hm
     }));
-  render();toast("تحضير يدوي ✅",`${st.name} · ${st.cls}`,"g");
+  render();toast(isLate?"تحضير يدوي — متأخّرة ⏰":"تحضير يدوي ✅",`${st.name} · ${st.cls}`,isLate?"y":"g");
 }
 /* الغياب — الكاتب الناقص. كان لا سبيل في الواجهة لتسجيله، وعلى خادم حقيقيّ
    لا تُكتب إلّا صفوف `present` ⇒ غيابٌ واحد لا يقع أبدًا، و`sendAbsenceAlerts`
@@ -1597,7 +1702,13 @@ async function doLogin(){
   if(btn){btn.disabled=true;btn.textContent="جارٍ التحقّق…";}
   try{
     const r=await eduviaLogin(idEl.value, pinEl.value);
-    if(!r.ok){ err.textContent=r.error; return; }
+    if(!r.ok){ err.textContent=r.error; if(btn){btn.disabled=false;btn.textContent="دخول";} return; }
+    const parentMode=new URLSearchParams(location.search||"").get("app")=== "parent";
+    if(parentMode && r.role!=="parent"){
+      err.textContent="هذا الحساب ليس حساب وليّ أمر. استخدم رقم هاتف وليّ الأمر ورمز حسابه من تطبيق الأولياء.";
+      if(btn){btn.disabled=false;btn.textContent="دخول";}
+      return;
+    }
     CURRENT_USER={loginId:idEl.value.trim(), name:r.name, role:r.role, studentId:r.studentId||null};
     /* تذكّر المعرّف لهذا الجهاز فقط — لتعبئته عند الفتح التالي من الأيقونة. */
     try{ localStorage.setItem("eduvia.lastLoginId", CURRENT_USER.loginId); }catch(e){}
@@ -2135,13 +2246,13 @@ function qrSVG(text,px){
   return `<svg viewBox="0 0 ${total} ${total}" width="${px}" height="${px}" shape-rendering="crispEdges" style="background:#fff;border-radius:10px"><rect width="${total}" height="${total}" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
 }
 function genParentQR(){
-  const url=(document.getElementById("parentUrl").value||"").trim()||"https://brandheroman4.github.io/eduvia-parent-app/";
+  const url=(document.getElementById("parentUrl").value||"").trim()||"https://brandheroman4.github.io/smart-school-demo/parent-app.html";
   const h=document.getElementById("parentQR");
   try{h.innerHTML=qrSVG(url,240)+`<div class="muted" style="width:100%;text-align:center;direction:ltr;margin-top:8px">${url}</div>`;}
   catch(e){h.innerHTML='<div class="notice a">الرابط طويل جدًا لتوليد رمز محلّي.</div>';}
 }
 function printParentPoster(){
-  const url=(document.getElementById("parentUrl").value||"").trim()||"https://brandheroman4.github.io/eduvia-parent-app/";
+  const url=(document.getElementById("parentUrl").value||"").trim()||"https://brandheroman4.github.io/smart-school-demo/parent-app.html";
   let qr;try{qr=qrSVG(url,200);}catch(e){qr='<div>الرابط طويل جدًا</div>';}
   const B=(ic,bg,t,d)=>`<div style="border:1px solid #e6eaf2;border-radius:12px;padding:10px;display:flex;gap:9px;align-items:flex-start">
     <div style="width:36px;height:36px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${ic}</div>
@@ -2419,6 +2530,11 @@ function unlinkedHTML(){
     الحساب قائم، لكنه لم يُربَط بعد بأيّ تلميذة في سجلّ المؤسسة.<br>
     راجعي الإدارة لربط حسابك بالمعرِّف <span class="code">${who}</span>.</div></div>`;
 }
+function requestParentPlan(plan,amount){
+  const login=(CURRENT_USER&&CURRENT_USER.loginId)||"";
+  try{ localStorage.setItem("eduvia.parentPlanChoice",JSON.stringify({plan,amount,login,at:new Date().toISOString()})); }catch(e){}
+  toast("تم اختيار الخطة",""+plan+" — "+amount+" دج. راجعي أمانة المؤسسة للتجديد؛ لا يفعّل الاختيار الاشتراك تلقائيًا.","b");
+}
 function renderParentWing(){
   const st=meStudent;
   if(!st){ PARENT_PAGES.forEach(p=>{const el=document.getElementById(p); if(el) el.innerHTML=unlinkedHTML();}); return; }
@@ -2480,7 +2596,15 @@ function renderParentWing(){
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>المؤسسة</span><b>${esc(CURRENT_SCHOOL)}</b></div>
       <div style="display:flex;justify-content:space-between;padding:10px 0"><span>الاشتراك</span><b>${sub&&sub.paid_until?"سارٍ حتى "+esc(String(sub.paid_until).slice(0,10)):"غير مسجَّل بعد"}</b></div>
       ${sub&&sub.receipt_no?`<div class="muted" style="margin-top:6px">وصل رقم ${esc(sub.receipt_no)}${sub.amount_dzd?" · "+sub.amount_dzd+" دج":""}</div>`:""}
-      <div class="muted" style="margin-top:10px">للتجديد راجعي أمانة المؤسسة.</div>
+      <div class="notice b" style="margin-top:10px">عرض الخطط لا يفعّل الاشتراك تلقائيًا. تفعيل التجديد وتسليم الوصل من مسؤول المالية في المؤسسة فقط.</div>
+    </div>
+    <div class="panel"><h2>💳 اختيار خطة الاشتراك</h2>
+      <div class="cards parent-plans">
+        <div class="panel" style="margin:0"><b>شهريًّا</b><div style="font-size:24px;font-weight:900;margin:10px 0">300 دج</div><div class="muted">كل مزايا التطبيق لمدة شهر</div><button class="btn primary" style="width:100%;margin-top:12px" onclick="requestParentPlan('الاشتراك الشهري',300)">اختيار الخطة</button></div>
+        <div class="panel" style="margin:0;border:2px solid var(--primary)"><span class="pill primary">الأكثر اختيارًا</span><b style="display:block;margin-top:6px">فصل دراسي</b><div style="font-size:24px;font-weight:900;margin:10px 0">750 دج</div><div class="muted">كل المزايا لمدة 3 أشهر</div><button class="btn primary" style="width:100%;margin-top:12px" onclick="requestParentPlan('الاشتراك الثلاثي',750)">اختيار الخطة</button></div>
+        <div class="panel" style="margin:0"><b>سنويًّا</b><div style="font-size:24px;font-weight:900;margin:10px 0">2500 دج</div><div class="muted">كل المزايا طوال الموسم</div><button class="btn primary" style="width:100%;margin-top:12px" onclick="requestParentPlan('الاشتراك السنوي',2500)">اختيار الخطة</button></div>
+      </div>
+      <div class="muted" style="margin-top:12px">للرجوع إلى الخطة السابقة أو التمديد: راجعي أمانة المؤسسة بعد اختيار الخطة.</div>
     </div>
     <div class="panel"><h2>🔑 الرمز السرّي</h2>
       <div class="muted">الرمز المسلَّم على البطاقة صالح للدخول. لتغييره راجعي الإدارة في هذه المرحلة.</div></div>`;
@@ -2803,6 +2927,7 @@ const SYNC = {
   client: null,
   uid: null,            /* auth.uid — تحتاجه الكتابات التي تشترط مالكًا للصفّ */
   complaintsMeta: null, /* هل شُغِّل sql/004 (عمودا target/anonymous)؟ null = لم يُسأل بعد */
+  gateMethodMeta: null, /* هل شُغِّل sql/008 (عمود method في gate_log)؟ */
   blocked: 0,           /* صفوف ردّها الخادم نهائيًّا ولم تصل */
   stale: 0,             /* صفوف كانت موجودة فطُويت نسختها الأحدث (بلا upsert) */
   lastBlocked: null,
@@ -2995,8 +3120,16 @@ function rowFor(table,o){
        والأثر قد وصل. فله DO NOTHING كسجلّ التدقيق. */
     case "gate_log":{
       const sid=sidOrNull(o.student_id); if(sid===false) return null;
-      return {student_id:sid, at_time:o.at_time, day:o.day,
-              late:!!o.late, client_id:o.client_id};
+      const row={student_id:sid, at_time:o.at_time, day:o.day,
+                 late:!!o.late, client_id:o.client_id};
+      /* تُحفظ الطريقة في الطابور حتى بلا شبكة. حارس العمود يُطبَّق عند
+         الإرسال؛ والحالة false تستبعدها فورًا إذا ثبت غياب sql/008. */
+      if(o.method && SYNC.gateMethodMeta===false) {
+        /* لا نُرسل عمودًا غير موجود على المخطّط القديم. */
+      } else if(o.method && (SYNC.gateMethodMeta===true || SYNC.gateMethodMeta===null)) {
+        row.method=o.method;
+      }
+      return row;
     }
 
     /* التطبيق — **القناة التي تصل بلا مزوّد**: `notif_read` تُريها وليّ
@@ -3112,6 +3245,15 @@ const conflictKey=(t)=>CONFLICT_OF[t]||"client_id";
 const INSERT_ONLY={audit_log:1, notifications:1, complaints:1, gate_log:1};
 const isInsertOnly=(t)=>!!INSERT_ONLY[t];
 
+/* فحص العمود مستقلّ عن الجلب: عند عودة الشبكة قد يُرسل الطابور قبل hydrate.
+   خطأ الشبكة لا يعني عمودًا غائبًا — تبقى الطريقة في الطابور حتى نجاح الفحص. */
+async function ensureGateMethod(client){
+  if(SYNC.gateMethodMeta!==null) return SYNC.gateMethodMeta;
+  const r=await client.from("gate_log").select("method").limit(1);
+  if(r.error && !/^(42703|PGRST204)$/.test(r.error.code||"")) throw r.error;
+  SYNC.gateMethodMeta=!r.error;
+  return SYNC.gateMethodMeta;
+}
 async function flushQueue(){
   if(_flushing || SYNC.mode!=="remote" || !SYNC.online || !QUEUE.length) return;
   const client=await ensureClient(); if(!client) return;
@@ -3137,8 +3279,22 @@ async function flushQueue(){
         for(const k in (it.match||{})) q=q.eq(k,it.match[k]);
         const r=await q; error=r.error; affected=(r.data||[]).length;
       }else{
-        let r=await client.from(it.table).upsert(it.row,
+        let row=it.row;
+        if(it.table==="gate_log" && row.method){
+          const supported=await ensureGateMethod(client);
+          row=Object.assign({},row);
+          if(!supported) delete row.method;
+        }
+        let r=await client.from(it.table).upsert(row,
           {onConflict:conflictKey(it.table), ignoreDuplicates:isInsertOnly(it.table)});
+        /* تغيّر مخطّط الخادم بعد الفحص: يُحفظ العبور دون العمود الغائب. */
+        if(it.table==="gate_log" && row.method && r.error &&
+           /^(42703|PGRST204)$/.test(r.error.code||"") && /method/i.test(r.error.message||"")){
+          SYNC.gateMethodMeta=false;
+          delete row.method;
+          r=await client.from(it.table).upsert(row,
+            {onConflict:conflictKey(it.table), ignoreDuplicates:true});
+        }
         /* المخطّط الأصلي أنشأ الفهرس الفريد على client_id **جزئيًّا**
            (`where client_id is not null`)، وPostgres لا يستطيع مطابقة فهرس
            جزئي بـON CONFLICT ⇒ 42P10 لكل صفّ. نسقط المفتاح ونُرسل إدراجًا
@@ -3146,7 +3302,7 @@ async function flushQueue(){
            (و`sql/005` يجعل upsert سليمًا؛ هذا حارسٌ لا بديل.) */
         if(r.error && r.error.code==="42P10"){
           it._fellBack=true;
-          r=await client.from(it.table).insert(it.row);
+          r=await client.from(it.table).insert(row);
         }
         error=r.error;
         if(!error && it.table==="students") sawNewStudent=true;
@@ -3237,6 +3393,7 @@ function renderSyncChip(){
           SYNC.hydrated.notes+" ملاحظة · "+tip;
       if(SYNC.hydrated.objections) tip+=" · ⚖️ "+SYNC.hydrated.objections+" اعتراضًا معلّقًا";
       if(SYNC.complaintsMeta===false) tip+=" · ⚠️ شغّلي sql/004_complaints_meta.sql ليُحفظ «هدف» الشكوى في عموده";
+      if(SYNC.gateMethodMeta===false) tip+=" · ⚠️ شغّلي sql/008_gate_method.sql ليُحفظ «مصدر» العبور (كاميرا/يدوي/تحضير)";
     }
     if(SYNC.stale) tip+=" · ⚠️ "+SYNC.stale+" صفًّا كان موجودًا سابقًا فطُويت نسخته الأحدث — شغّلي sql/005";
     if(SYNC.blocked) tip+=" · ⚠️ "+SYNC.blocked+" تغييرًا ردّه الخادم نهائيًّا — راجع سجلّ التدقيق"+
@@ -3322,6 +3479,14 @@ async function hydrate(){
        لو أرسلناهما قبل تشغيله لرفضهما الخادم وأوقفا الطابور كلّه. */
     try{ SYNC.complaintsMeta=!(await client.from("complaints").select("target").limit(1)).error; }
     catch(e){ SYNC.complaintsMeta=false; }
+    /* وفحصٌ مماثل لطريقة العبور (sql/008): لا نُرسل العمود قبل وجوده —
+       وإلّا ردّه الخادم وتوقّف الطابور كلّه عنده. يُسأل حين يقرأ الدور
+       سجلّ البوابة، فلا سؤالَ عبثيًّا لوليّ الأمر. */
+    if(canGate){
+      SYNC.gateMethodMeta=null;
+      try{ await ensureGateMethod(client); }
+      catch(e){ errs.push("gate_log.method"); }
+    }
 
     /* سجلّ الاشتراك — **لوليّ الأمر وحده**. ويُقرأ بحذرٍ مستقلّ عن `get()`:
        الجدول يُضيفه sql/007، فطلبُه قبل تشغيله يُخطئ بلا أن يعني عطبًا.
@@ -3462,16 +3627,21 @@ async function hydrate(){
        فإذا وُجدت صفوفٌ حقيقية فهي المرجع، والمشتقّ يبقى احتياطًا حين لا جهاز.
        (ولا نخلطهما: المشتقّ يقول «سارة حاضرة الساعة 08:10»، والحقيقي يقول
        «عبَرت مرّتين: 08:10 و 09:40» — وهذا فرقٌ يهمّ الإدارة.) */
-    if(glRows&&glRows.length){
-      const today=glRows.filter(r=>String(r.day).slice(0,10)===todayISO());
+    if(glRows){
+      /* كلّ الأيام أولًا: فلتر التاريخ والتصدير يحتاجانها. الصفوف التي لا
+         تلميذة لها (حُذفت) تُسقَط كما كان. */
+      GATE_ALL=glRows.map(r=>{
+        const s=students.find(x=>x.cloudId===r.student_id);
+        if(!s) return null;
+        return {day:String(r.day||"").slice(0,10),time:r.at_time,name:s.name,cls:s.cls,
+                late:!!r.late,method:r.method||""};
+      }).filter(Boolean)
+        .sort((a,b)=>(b.day+String(b.time)).localeCompare(a.day+String(a.time)));
+      /* عرض اليوم يبقى من `gateLog` (فيه ما لم يُزامَن بعد)، ويُبنى من صفوف
+         الخادم إن وُجدت صفوفٌ لهذا اليوم. */
+      const today=GATE_ALL.filter(r=>r.day===todayISO());
       if(today.length){
-        gateLog=today
-          .filter(r=>{const s=students.find(x=>x.cloudId===r.student_id);return !!s;})
-          .map(r=>{
-            const s=students.find(x=>x.cloudId===r.student_id);
-            return {time:r.at_time,name:s.name,cls:s.cls,late:!!r.late};
-          })
-          .sort((a,b)=>String(b.time).localeCompare(String(a.time)));
+        gateLog=today.map(r=>({time:r.time,name:r.name,cls:r.cls,late:r.late,method:r.method}));
         SYNC.gateFromServer=true;
       }
     }
@@ -3613,6 +3783,14 @@ async function buildAccounts(){
   if(ACCOUNTS) return ACCOUNTS;
   const rows=DEMO_STAFF.slice();
   for(const s of students) rows.push({loginId:s.card,role:"student",name:s.name,pin:DEMO_PIN_STUDENT,studentId:s.id});
+  const seenParent=new Set();
+  for(const s of students){
+    const phone=String(s.phone||"").trim();
+    if(phone&&!seenParent.has(phone)){
+      seenParent.add(phone);
+      rows.push({loginId:phone,role:"parent",name:s.parent||"وليّ الأمر",pin:DEMO_PIN_STUDENT,studentId:s.id});
+    }
+  }
   const out=[];
   for(const r of rows){
     out.push({loginId:r.loginId,role:r.role,name:r.name,studentId:r.studentId,
@@ -3778,6 +3956,14 @@ renderDemoAccounts();
     : "وضع تجريبي محلي · البيانات في هذا الجهاز وحده (لا خادم). حسابات التجربة أدناه — <b>وهي لا تعمل على الخادم</b>.";
 })();
 if(SYNC.mode==="remote" && QUEUE.length) scheduleFlush(1500);
+(function configureParentApp(){
+  let parentMode=false; try{parentMode=new URLSearchParams(location.search||"").get("app")==="parent";}catch(e){}
+  if(!parentMode) return;
+  document.body.classList.add("parent-app-shell"); document.title="EDUVIA — تطبيق وليّ الأمر";
+  const loginBox=document.querySelector("#login .box p"); if(loginBox) loginBox.textContent="تطبيق وليّ الأمر — متابعة ابنتك لحظة بلحظة";
+  const loginLabel=document.querySelector('label[for="loginId"]'); if(loginLabel) loginLabel.textContent="رقم هاتف وليّ الأمر أو معرّف الحساب";
+  const loginInput=document.getElementById("loginId"); if(loginInput) loginInput.placeholder="0555123456 أو معرّف وليّ الأمر";
+})();
 
 /* ================= PWA: تثبيت التطبيق على الهاتف =================
    كان زرّ التثبيت موجودًا في نموذج تطبيق الأولياء القديم؛ وبُني النموذج

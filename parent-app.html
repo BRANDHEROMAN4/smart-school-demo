@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EDUVIA — الانتقال إلى المنصّة</title>
 <meta name="robots" content="noindex">
-<meta http-equiv="refresh" content="0;url=index.html">
+<meta http-equiv="refresh" content="0;url=index.html?app=parent">
 <style>
   body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;
     background:linear-gradient(135deg,#16366B 0%,#1E8FD0 45%,#17A39B 72%,#34B45E 100%);
@@ -30,7 +30,7 @@
 /* انتقالٌ يحافظ على ?id=… إن جاء من بوّابة الأولياء. */
 (function(){
   var q=location.search||"";
-  var u="index.html"+q;
+  var u="index.html?app=parent"+(q?"&"+q.replace(/^\?/,""):"");
   var a=document.getElementById("go");
   if(a) a.setAttribute("href",u);
   location.replace(u);

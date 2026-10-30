@@ -98,6 +98,10 @@ function makeSandbox({ students = [], notes = [], complaints = [], online = true
        مفتاحُها من الاختبار بلا أن يعلن سببه. */
     NOTES: notes, complaints, HOMEWORK: [], SUMMONS: [],
     nextId: 1, teachers: [], gateLog: [], notifs: [],
+    /* سجلّ البوابة لكلّ الأيام + اليوم المعروض: يُعاد إسنادهما في hydrate()
+       (وهما `let` خارج النصّ المستخرَج مثل gateLog). بلا تعريفهما هنا يرمي
+       hydrate مرجعًا فيُبتلع في catch ويبدو الجلب فاشلًا بلا سبب. */
+    GATE_ALL: [], GATE_DAY: "",
     /* `currentRole` تسكن منطقة الواجهة **خارج** النصّ المستخرَج، وهي ليست
        `let` في هذا النطاق ⇒ بلا تعريفها هنا يرمي `hydrate()` مرجعًا
        (ReferenceError) فيُبتلع في catch ويُعلن {ok:false} — فيسقط جناح
@@ -419,7 +423,10 @@ async function main() {
         },
       }),
     });
-    const TODAY = new Date().toISOString().slice(0, 10);
+    /* تاريخ اليوم **محلّيًّا** كما يبنيه التطبيق (isoOf). كان UTC في الاختبار
+       ⇒ يخفق حول منتصف الليل في UTC+1 لسببٍ لا علاقة له بالكود المقيس. */
+    const _d = new Date();
+    const TODAY = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
     const DATA = {
       students: [
         { id: "a1", card_no: "RF-0001", full_name: "مريم بن علي", grade: 1, section: "أ", class_label: "1أ", parent_name: "السيد كمال", parent_phone: "0551000001", notify_pref: "sms" },
@@ -453,8 +460,14 @@ async function main() {
           body: "نسخة الخادم من صفّ معلّق", anonymous: false, status: "مُرسَل",
           created_at: "2026-10-07T11:00:00Z", client_id: "cl-compl" },
       ],
-      /* وجود هذين العمودين = شُغِّل sql/006. غيابهما يُفعِّل الاحتياط. */
-      __cols: ["target", "anonymous"],
+      /* سجلّ البوابة: صفٌّ واحد بطريقةٍ معلَنة — يُقاس أن الجلب يحفظ الطريقة
+         ويملأ سجلّ الأيام (فلتر التاريخ). */
+      gate_log: [
+        { student_id: "a1", at_time: "08:20", day: TODAY, late: true, method: "qr" },
+      ],
+      /* وجود هذين العمودين = شُغِّل sql/006. و"method" = شُغِّل sql/008.
+         غيابها يُفعِّل الاحتياط (لا يُرسَل العمود الغائب). */
+      __cols: ["target", "anonymous", "method"],
     };
 
     const { T, sandbox } = makeSandbox({
@@ -529,6 +542,12 @@ async function main() {
     eq(C.find(x => x.serverId === "c2").by, "مجهول", "«مجهولة» تُحترم: لا يُستنتج صاحبها");
     eq(C.find(x => x.serverId === "c1").target, "النظافة", "الهدف من عموده (sql/006 مُشغَّل)");
     eq(T.SYNC.complaintsMeta, true, "فحص القدرة: العمودان موجودان ⇒ لا احتياط");
+    eq(T.SYNC.gateMethodMeta, true, "وفحص طريقة العبور: sql/008 مُشغَّل ⇒ الطريقة تُرسَل");
+    /* سجلّ البوابة: الطريقة لا تُدهَس في الجلب، وكلّ الأيام تُحفَظ للفلتر. */
+    eq(sandbox.gateLog[0] && sandbox.gateLog[0].method, "qr",
+      "طريقة العبور تُقرأ من الخادم إلى عرض اليوم");
+    eq(sandbox.GATE_ALL[0] && sandbox.GATE_ALL[0].day, TODAY,
+      "وصفوف كلّ الأيام تُحفَظ (فلتر التاريخ كان معدومًا)");
     eq(r.objections, 1, "اعتراض معلّق واحد يُبلَّغ عنه للمديرة عند الدخول");
 
     /* ── الجلب لا يدهس غيابًا لم يصل ─────────────────────────────────────
@@ -838,6 +857,16 @@ async function main() {
       const g = T.rowFor("gate_log", { student_id: 7, at_time: "08:10", day: "2026-10-12", late: true });
       eq(g.at_time, "08:10", "البوابة: وقت العبور كما هو");
       eq(g.late, true, "وعلامة التأخّر محفوظة");
+      /* طريقة العبور (sql/008): عمودٌ غير موجود يردّه PostgREST فيتوقّف
+         الطابور كلّه — فلا يُرسَل إلا بعد إثبات وجوده. */
+      T.SYNC.gateMethodMeta = true;
+      eq(T.rowFor("gate_log", { student_id: 7, at_time: "08:10", day: "2026-10-12",
+                                late: false, method: "qr" }).method, "qr",
+         "بعد sql/008: الطريقة تُرسَل مع العبور");
+      T.SYNC.gateMethodMeta = false;
+      eq(T.rowFor("gate_log", { student_id: 7, at_time: "08:10", day: "2026-10-12",
+                                late: false, method: "qr" }).method, undefined,
+         "وقبله: العبور يُرسَل بلا عمودٍ مجهول (لا يتوقّف الطابور)");
       eq(T.rowFor("gate_log", { student_id: 9, at_time: "08:10", day: "2026-10-12" }), null,
          "وتلميذة بلا uuid ⇒ لا صفّ");
 

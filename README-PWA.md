@@ -15,7 +15,7 @@ node serve.js
 | الموقع | الرابط |
 |---|---|
 | منصّة المدرسة | <https://brandheroman4.github.io/smart-school-demo/> |
-| بوّابة الأولياء (صفحة تحويل) | <https://brandheroman4.github.io/eduvia-parent-app/> |
+| بوّابة الأولياء (صفحة تحويل) | <https://brandheroman4.github.io/smart-school-demo/parent-app.html> |
 
 - المستودعان **عامّان**، والنشر من فرع `main` تلقائيًّا (GitHub Actions).
 - تحديث الموقع = `git push`؛ لا رصيد استضافة ولا اعتماد على Netlify.

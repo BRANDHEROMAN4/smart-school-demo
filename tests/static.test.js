@@ -387,8 +387,8 @@ function main() {
     /* الطرف الآخر: أثر العبور لا يُشترط به الدور — الأمانة لها `gate_write`. */
     chk(/enqueue\("gate_log"/.test(cross) && !/canRecord\(currentRole\)[\s\S]{0,80}enqueue\("gate_log"/.test(cross),
       "وسجلّ البوابة يُرسَل بلا شرط دور (الأمانة تكتبه على الخادم)");
-    chk(/recordCrossing\(pick\(cand\)\)/.test(body("simulateScan") || ""),
-      "والمحاكاة تفوّض إلى recordCrossing (لا نسخة ثانية من القواعد)");
+    chk(/recordCrossing\(pick\(cand\),\s*"simulated"\)/.test(body("simulateScan") || ""),
+      "والمحاكاة تفوّض إلى recordCrossing بطريقةٍ معلَنة (لا نسخة ثانية من القواعد)");
     /* التاريخ المحلّي لا UTC — عبور 00:24 في UTC+1 كان يُكتب في يوم الأمس
        (رأيناه حيًّا: day=2026-10-20 لعبور 2026-10-21)، وattendance مقيَّدة
        بـunique(student_id, day) ⇒ يطمس حضور الأمس لا أنّه يضيف صفًّا. */
@@ -586,6 +586,8 @@ function main() {
       "ولكلّ صفحة قسمٌ في الملف (وإلّا كتب الجناح في عنصرٍ غير موجود فرمى)");
     chk(/function\s+renderParentWing\s*\(/.test(HTML) && countWord("renderParentWing") >= 2,
       "renderParentWing معرَّفة **ومُناداة** (تعريفٌ بلا نداء لا يُظهر شيئًا)");
+    chk(/اختيار خطة الاشتراك/.test(HTML) && /requestParentPlan/.test(HTML),
+      "جناح وليّ الأمر يعرض خطط الاشتراك ويتيح اختيار خطة دون تفعيلها ذاتيًّا");
     chk(/if\(k==="parent"\)\{/.test(HTML), "وapplyRole تُوجّه دور parent إلى جناحه");
     chk(/r\.role==="student"\|\|r\.role==="parent"/.test(HTML),
       "وdoLogin تُعرِّف meStudent للوليّ أيضًا (وإلّا بقيت الشاشة فارغة)");
@@ -682,11 +684,45 @@ function main() {
       chk(new RegExp(`function\\s+${f}\\s*\\(`).test(HTML), `${f} معرَّفة`);
     }
     /* المسارات كلها تمرّ من نقطةٍ واحدة — وإلّا اختلفت قواعدها. */
-    chk(/function recordByCard[\s\S]*?return recordCrossing\(st\)/.test(HTML),
+    chk(/function recordByCard[\s\S]*?return recordCrossing\(st,\s*method\s*\|\|\s*"manual"\)/.test(HTML),
       "إدخال الرقم يمرّ من recordCrossing (قواعد واحدة لا نسختان)");
-    chk(/function simulateScan[\s\S]*?recordCrossing\(pick\(cand\)\)/.test(HTML),
+    chk(/function simulateScan[\s\S]*?recordCrossing\(pick\(cand\),\s*"simulated"\)/.test(HTML),
       "والمحاكاة تمرّ منه كذلك");
-    chk(/recordByCard\(card\)/.test(HTML), "والكاميرا تنتهي إلى recordByCard");
+    chk(/recordByCard\(card,\s*"qr"\)/.test(HTML), "والكاميرا تنتهي إلى recordByCard بطريقة qr");
+
+    /* ── طريقة العبور (sql/008) ───────────────────────────────────────────
+       الكاميرا والرقم المكتوب و«تحضير» كانت تكتب الصفّ نفسه، فلا تُعرَف
+       لاحقًا كيف عبَرت التلميذة. والقياس على أنّ **كلّ مسار يعلن طريقه**،
+       وأنّ الحقل لا يُرسَل قبل أن يثبت وجوده على الخادم (وإلّا أوقف الطابور). */
+    const body = extractFn;
+    const man = body("markPresent") || "";
+    const rec = body("recordCrossing") || "";
+    chk(/function recordCrossing\(st,\s*method\)/.test(HTML),
+      "recordCrossing تستقبل طريقة العبور");
+    chk(/method\s*=\s*GATE_METHODS\[method\]\?method:"manual"/.test(rec),
+      "وطريقة غير معروفة تسقط إلى manual لا إلى قيمة وهمية");
+    chk(/recordByCard\([^;]*,\s*"manual"\)/.test(body("recordCardInput") || ""),
+      "الإدخال اليدوي يُعلن manual");
+    chk(/method:"teacher"/.test(man),
+      "و«تحضير» يُعلن teacher");
+    chk(/isLateAt\(t\)/.test(rec) && /isLateAt\(t\)/.test(man),
+      "وقاعدة التأخّر (08:15) مشتركة بين العبور والتحضير");
+    chk(!/late:false/.test(man),
+      "«تحضير» لم يعد يكتب حاضرًا مهما كانت الساعة (كان صفًّا أخضر في التاسعة مساءً)");
+    chk(/function isLateAt\(t\)/.test(HTML) && !/getHours\(\)>8\)\|\|\(t\.getHours\(\)===8/.test(rec),
+      "قاعدة التأخّر لا تُكرَّر في مساراتٍ تفترق");
+    chk(/SYNC\.gateMethodMeta===true/.test(HTML) && /select\("method"\)/.test(HTML),
+      "method يُرسَل فقط بعد إثبات وجوده · والفحص موجود (وإلّا PGRST204 يوقف الطابور)");
+    chk(/function renderGateLog\(/.test(HTML) && /methodLabel\(g\.method\)/.test(HTML),
+      "والسجلّ يعرض طريقة كلّ عبور");
+    chk(/id="gateDay"/.test(HTML) && /onchange="setGateDay\(this\.value\)"/.test(HTML),
+      "وفلتر بالتاريخ (السجلّ لم يكن يُظهر إلّا اليوم)");
+    chk(/onclick="exportGateCsv\(\)"/.test(HTML) && /function exportGateCsv\(/.test(HTML),
+      "وتصدير CSV للسجلّ");
+    const SQL008 = fs.readFileSync(path.join(ROOT, "sql/008_gate_method.sql"), "utf8");
+    chk(/add column if not exists method/.test(SQL008) &&
+        /check \(method in \('qr','manual','teacher','simulated','legacy'\)\)/.test(SQL008),
+      "sql/008 يُضيف العمود ويقيّد قيمه — ويقبل إعادة التنفيذ");
     /* المحاكاة لا تظهر في الوضع الموصول: كانت تكتب تلميذةً عشوائية في الخادم. */
     chk(/demoScanBtn/.test(HTML) && /db\.style\.display=remote\?"none":""/.test(HTML),
       "والمحاكاة تُخفى في الوضع الموصول (كانت تكتب عشوائيًّا على الخادم الحقيقيّ)");
@@ -784,11 +820,13 @@ function main() {
     /* تطبيق الأولياء: صفحة تحويل، لا دخولٌ وهميّ يقبل أي رمز. */
     const PARENT = fs.readFileSync(path.join(ROOT, "parent-app.html"), "utf8");
     chk(/location\.replace\(/.test(PARENT) && /index\.html/.test(PARENT),
-      "parent-app.html تحوّل إلى المنصّة الحقيقية");
+      "parent-app.html يحوّل إلى واجهة تطبيق الأولياء المخصّصة عبر app=parent");
     chk(!/function plogin|ph\.length<9/.test(PARENT),
       "ولا يوجد فيه الدخول الوهميّ القديم (كان يقبل أي رقم وأي رمز)");
     chk(/loginFromQuery/.test(HTML_CODE) && /qs\.get\("id"\)/.test(HTML_CODE),
       "والمنصّة تعبّئ المعرّف من ?id= القادم من بوّابة الأولياء");
+    chk(/app=parent/.test(PARENT) && /configureParentApp/.test(HTML_CODE) && /r\.role!=="parent"/.test(HTML_CODE),
+      "تطبيق وليّ الأمر له واجهة دخول مخصّصة ويمنع دخول حسابات الأدوار الأخرى");
     /* تثبيت التطبيق: كان زرّه في النموذج القديم، فاختفى باختفائه.
        التثبيت الآن للمنصّة الحقيقية — هي التي تحمل الحساب والبيانات. */
     chk(/<link rel="manifest" href="manifest\.json">/.test(HTML),
@@ -803,7 +841,7 @@ function main() {
       "وآخر معرّف دخول يُعبَّأ عند فتح التطبيق المثبَّت (الرمز لا يُخزَّن)");
     /* النشر انتقل إلى GitHub Pages: رابط البوّابة الافتراضي يجب أن يتبعه،
        وسير العمل لا ينشر إلا ما يحتاجه الزائر. */
-    chk(/brandheroman4\.github\.io\/eduvia-parent-app\//.test(HTML_CODE),
+    chk(/brandheroman4\.github\.io\/smart-school-demo\/parent-app\.html/.test(HTML_CODE),
       "رابط البوّابة الافتراضي على GitHub Pages");
     chk(!/eduvia-parent-app\.netlify\.app/.test(HTML_CODE),
       "ولا يبقى رابط Netlify القديم داخل المنصّة");

@@ -31,6 +31,7 @@ const suites = [
   { file: "static.test.js", name: "التدقيق الساكن للملفّ", need: null },
   { file: "qr.test.js", name: "رمز QR يُقرأ فعلًا", need: null },
   { file: "import.test.js", name: "تحليل قائمة التلاميذ", need: null },
+  { file: "card.test.js", name: "نقل بطاقة تلميذة", need: null },
   { file: "sync.test.js", name: "المزامنة والمصادقة", need: null },
   {
     file: "rls.test.js",
