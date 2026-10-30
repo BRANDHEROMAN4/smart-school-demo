@@ -45,7 +45,7 @@ Deno.serve(async () => {
 
     const response = await fetch(`https://graph.facebook.com/v22.0/${whatsappPhoneId}/messages`, {
       method: "POST",
-      headers: { authorization: `Bearer ${whatsappToken}`, "content-type": "application/json" },
+      headers: { authorization: "Bearer " + whatsappToken, "content-type": "application/json" },
       body: JSON.stringify(payload)
     });
 
