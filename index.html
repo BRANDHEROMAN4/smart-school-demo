@@ -569,6 +569,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
       <div class="actions" style="gap:8px;flex-wrap:wrap">
         <input id="subParentPhone" class="search" style="min-width:220px" placeholder="رقم هاتف الولي، مثل 0551234567" aria-label="رقم هاتف الولي" oninput="applyParentPlanChoiceToAdmin(this.value)">
         <input id="subPaidUntil" class="search" style="min-width:180px" type="date" aria-label="آخر يوم للاشتراك">
+        <select id="subPlan" class="search" style="min-width:180px" aria-label="نوع الخطة"><option value="">اختر الخطة</option><option value="الاشتراك الشهري">الاشتراك الشهري — 300 دج</option><option value="الاشتراك الثلاثي">الاشتراك الثلاثي — 750 دج</option><option value="الاشتراك السنوي">الاشتراك السنوي — 2500 دج</option></select>
         <input id="subAmount" class="search" style="min-width:140px" type="number" min="0" placeholder="المبلغ بالدينار" aria-label="مبلغ الاشتراك">
         <input id="subReceipt" class="search" style="min-width:180px" placeholder="رقم الوصل" aria-label="رقم وصل الدفع">
         <button class="btn primary" onclick="activateParentSubscription()">تفعيل الاشتراك</button>
@@ -2633,6 +2634,8 @@ function applyParentPlanChoiceToAdmin(phone){
   const dateInput=document.getElementById("subPaidUntil");
   if(amountInput&&(!Number(amountInput.value)||Number(amountInput.value)==0)) amountInput.value=choice.amount||0;
   if(dateInput&&(!dateInput.value||dateInput.value===isoLocalDate(new Date()))) dateInput.value=choice.paidUntil||"";
+  const planInput=document.getElementById("subPlan");
+  if(planInput&&!planInput.value) planInput.value=choice.plan||"";
 }
 function canonParentPhone(phone){
   return String(phone||"").replace(/[^0-9]/g,"").replace(/^2130?/,(m)=>m.startsWith("213")?"0":"").slice(0,20);
@@ -2643,6 +2646,7 @@ async function activateParentSubscription(){
   const paidUntil=(document.getElementById("subPaidUntil")||{}).value||"";
   const amount=Number((document.getElementById("subAmount")||{}).value||0);
   const receipt=((document.getElementById("subReceipt")||{}).value||"").trim();
+  const plan=((document.getElementById("subPlan")||{}).value||"").trim();
   if(!["director","reception"].includes(currentRole)){toast("غير مصرح","التفعيل للمدير أو الأمانة فقط.","a");return;}
   const canonical=canonParentPhone(phone);
   if(!canonical||!/^0?[0-9]{8,15}$/.test(canonical)||!paidUntil){toast("بيانات ناقصة","أدخلي رقم الهاتف وتاريخ انتهاء صحيحين.","a");return;}
@@ -2650,7 +2654,7 @@ async function activateParentSubscription(){
   const profile=await client.from("profiles").select("id,login_id,display_name,school_id,role").eq("login_id",canonical).eq("role","parent").limit(1);
   if(profile.error||!profile.data||!profile.data.length){toast("الوليّ غير موجود","تحقّقي من رقم الهاتف الموحد لحساب الوليّ.","a");return;}
   const p=profile.data[0];
-  const upsert=await client.from("guardians_subscription").upsert({profile_id:p.id,paid_until:paidUntil,amount_dzd:Number.isFinite(amount)?amount:null,receipt_no:receipt||null,recorded_by:SYNC.uid||null},{onConflict:"profile_id"});
+  const upsert=await client.from("guardians_subscription").upsert({profile_id:p.id,paid_until:paidUntil,plan_name:plan||null,amount_dzd:Number.isFinite(amount)?amount:null,receipt_no:receipt||null,recorded_by:SYNC.uid||null},{onConflict:"profile_id"});
   if(upsert.error){toast("تعذّر التفعيل",upsert.error.message||String(upsert.error),"a");return;}
   toast("تم تفعيل الاشتراك ✅",`${p.display_name||canonical} — ساري حتى ${paidUntil}`,"g");
   await refreshParentSubscriptionAdmin();
@@ -2667,13 +2671,20 @@ async function deactivateParentSubscription(){
   toast("تم إلغاء الاشتراك","عاد الحساب إلى الحالة المجانية عند تحديث صفحات الوليّ.","g");
   await refreshParentSubscriptionAdmin();
 }
+function inferParentPlanName(sub){
+  if(!sub) return "غير محددة";
+  if(Number(sub.amount_dzd)===300) return "الاشتراك الشهري";
+  if(Number(sub.amount_dzd)===750) return "الاشتراك الثلاثي";
+  if(Number(sub.amount_dzd)===2500) return "الاشتراك السنوي";
+  return "خطة مدفوعة";
+}
 async function refreshParentSubscriptionAdmin(){
   const box=document.getElementById("subscriptionAdminList"); if(!box) return;
   if(!["director","reception"].includes(currentRole)){box.innerHTML="";return;}
   const client=await ensureClient(); if(!client){box.innerHTML='<div class="notice y">الوضع المحلي لا يفعّل اشتراكًا رسميًا.</div>';return;}
-  const r=await client.from("guardians_subscription").select("profile_id,paid_until,amount_dzd,receipt_no,profiles(login_id,display_name)").order("paid_until",{ascending:false});
+  const r=await client.from("guardians_subscription").select("profile_id,paid_until,plan_name,amount_dzd,receipt_no,profiles(login_id,display_name)").order("paid_until",{ascending:false});
   if(r.error){box.innerHTML='<div class="notice y">لم تُحمّل الاشتراكات بعد. تأكدي من تشغيل sql/007 وsql/009.</div>';return;}
-  box.innerHTML=(r.data||[]).length?`<div style="overflow:auto"><table><thead><tr><th>الوليّ</th><th>الهاتف</th><th>آخر يوم</th><th>المبلغ</th><th>الوصل</th></tr></thead><tbody>${r.data.map(s=>{const p=(s.profiles&&s.profiles[0])||s.profiles||{};return `<tr><td>${esc(p.display_name||"—")}</td><td class="ltr">${esc(p.login_id||"—")}</td><td>${esc(s.paid_until)}</td><td>${s.amount_dzd||0} دج</td><td>${esc(s.receipt_no||"—")}</td></tr>`;}).join("")}</tbody></table></div>`:'<div class="muted">لا اشتراكات مدفوعة مسجّلة حاليًا.</div>';
+  box.innerHTML=(r.data||[]).length?`<div style="overflow:auto"><table><thead><tr><th>الوليّ</th><th>الهاتف</th><th>الخطة</th><th>آخر يوم</th><th>المبلغ</th><th>الوصل</th></tr></thead><tbody>${r.data.map(s=>{const p=(s.profiles&&s.profiles[0])||s.profiles||{};const plan=esc(s.plan_name||inferParentPlanName(s));return `<tr><td>${esc(p.display_name||"—")}</td><td class="ltr">${esc(p.login_id||"—")}</td><td>${plan}</td><td>${esc(s.paid_until)}</td><td>${s.amount_dzd||0} دج</td><td>${esc(s.receipt_no||"—")}</td></tr>`;}).join("")}</tbody></table></div>`:'<div class="muted">لا اشتراكات مدفوعة مسجّلة حاليًا.</div>';
 }
 function parentSubscriptionPaid(){
   const until=SYNC.subscription&&SYNC.subscription.paid_until?String(SYNC.subscription.paid_until):"";
@@ -2779,7 +2790,7 @@ function renderParentWing(){
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>معرِّف الدخول</span><b class="code">${esc((CURRENT_USER&&CURRENT_USER.loginId)||"—")}</b></div>
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>المؤسسة</span><b>${esc(CURRENT_SCHOOL)}</b></div>
       <div style="display:flex;justify-content:space-between;padding:10px 0"><span>حالة الحساب</span><b>${parentSubscriptionPaid()?"مدفوع · سارٍ حتى "+esc(String(sub.paid_until).slice(0,10)):"مجاني · مفعّل تلقائيًا عند فتح الحساب"}</b></div>
-      ${sub&&sub.receipt_no?`<div class="muted" style="margin-top:6px">وصل رقم ${esc(sub.receipt_no)}${sub.amount_dzd?" · "+sub.amount_dzd+" دج":""}</div>`:""}
+      ${sub?`<div class="muted" style="margin-top:6px">${esc(sub.plan_name||inferParentPlanName(sub))}${sub.amount_dzd?" · "+sub.amount_dzd+" دج":""}${sub.receipt_no?" · وصل رقم "+esc(sub.receipt_no):""}</div>`:""}
       <div class="notice b" style="margin-top:10px">عرض الخطط لا يفعّل الاشتراك تلقائيًا. تفعيل التجديد وتسليم الوصل من مسؤول المالية في المؤسسة فقط.</div>
     </div>
     <div class="panel"><h2>💳 اختيار خطة الاشتراك</h2>
@@ -3679,8 +3690,12 @@ async function hydrate(){
        وغيابه يُقال صريحًا («غير مسجَّل بعد») لا يُلفَّق. */
     if(currentRole==="parent"){
       try{
-        const sr=await client.from("guardians_subscription")
-          .select("paid_until,amount_dzd,receipt_no").limit(1);
+        let sr=await client.from("guardians_subscription")
+          .select("paid_until,plan_name,amount_dzd,receipt_no").limit(1);
+        if(sr.error&&/plan_name|column/i.test(String(sr.error.message||sr.error))){
+          sr=await client.from("guardians_subscription")
+            .select("paid_until,amount_dzd,receipt_no").limit(1);
+        }
         SYNC.subscription=sr.error?null:((sr.data&&sr.data[0])||null);
       }catch(e){ SYNC.subscription=null; }
     }

@@ -19,12 +19,23 @@
 create table if not exists guardians_subscription (
   profile_id  uuid primary key references profiles(id) on delete cascade,
   paid_until  date not null,
+  plan_name   text,
   amount_dzd  integer check (amount_dzd is null or amount_dzd >= 0),
   receipt_no  text,
   recorded_by uuid references profiles(id) on delete set null,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+alter table guardians_subscription add column if not exists plan_name text;
+update guardians_subscription
+set plan_name = case
+  when amount_dzd = 300 then 'الاشتراك الشهري'
+  when amount_dzd = 750 then 'الاشتراك الثلاثي'
+  when amount_dzd = 2500 then 'الاشتراك السنوي'
+  else plan_name
+end
+where plan_name is null;
 
 alter table guardians_subscription enable row level security;
 

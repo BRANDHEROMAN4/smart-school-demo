@@ -19,6 +19,7 @@
 create table if not exists guardians_subscription (
   profile_id  uuid primary key references profiles(id) on delete cascade,
   paid_until  date not null,
+  plan_name   text,
   amount_dzd  integer check (amount_dzd is null or amount_dzd >= 0),
   receipt_no  text,
   recorded_by uuid references profiles(id) on delete set null,
