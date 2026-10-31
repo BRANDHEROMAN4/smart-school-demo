@@ -2682,8 +2682,11 @@ async function refreshParentSubscriptionAdmin(){
   const box=document.getElementById("subscriptionAdminList"); if(!box) return;
   if(!["director","reception"].includes(currentRole)){box.innerHTML="";return;}
   const client=await ensureClient(); if(!client){box.innerHTML='<div class="notice y">الوضع المحلي لا يفعّل اشتراكًا رسميًا.</div>';return;}
-  const r=await client.from("guardians_subscription").select("profile_id,paid_until,plan_name,amount_dzd,receipt_no,profiles(login_id,display_name)").order("paid_until",{ascending:false});
-  if(r.error){box.innerHTML='<div class="notice y">لم تُحمّل الاشتراكات بعد. تأكدي من تشغيل sql/007 وsql/009.</div>';return;}
+  let r=await client.from("guardians_subscription").select("profile_id,paid_until,plan_name,amount_dzd,receipt_no,profiles(login_id,display_name)").order("paid_until",{ascending:false});
+  if(r.error&&/plan_name|column/i.test(String(r.error.message||r.error))){
+    r=await client.from("guardians_subscription").select("profile_id,paid_until,amount_dzd,receipt_no,profiles(login_id,display_name)").order("paid_until",{ascending:false});
+  }
+  if(r.error){box.innerHTML='<div class="notice y">لم تُحمّل الاشتراكات بعد: '+esc(r.error.message||String(r.error))+'.</div>';return;}
   box.innerHTML=(r.data||[]).length?`<div style="overflow:auto"><table><thead><tr><th>الوليّ</th><th>الهاتف</th><th>الخطة</th><th>آخر يوم</th><th>المبلغ</th><th>الوصل</th></tr></thead><tbody>${r.data.map(s=>{const p=(s.profiles&&s.profiles[0])||s.profiles||{};const plan=esc(s.plan_name||inferParentPlanName(s));return `<tr><td>${esc(p.display_name||"—")}</td><td class="ltr">${esc(p.login_id||"—")}</td><td>${plan}</td><td>${esc(s.paid_until)}</td><td>${s.amount_dzd||0} دج</td><td>${esc(s.receipt_no||"—")}</td></tr>`;}).join("")}</tbody></table></div>`:'<div class="muted">لا اشتراكات مدفوعة مسجّلة حاليًا.</div>';
 }
 function parentSubscriptionPaid(){

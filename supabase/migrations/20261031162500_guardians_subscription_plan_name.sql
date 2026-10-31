@@ -8,3 +8,10 @@ set plan_name = case
   else plan_name
 end
 where plan_name is null;
+
+update guardians_subscription s
+set plan_name = 'الاشتراك السنوي'
+from profiles p
+where p.id = s.profile_id
+  and p.login_id in ('0696185584', '069618554')
+  and s.amount_dzd = 2500;
