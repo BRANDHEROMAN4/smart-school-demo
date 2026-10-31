@@ -215,7 +215,7 @@ async function main() {
 async function seed(db) {
   await db.query(
     `insert into schools (id,name,code) values
-       ($1,'ابتدائية النور','EDUVIA-NOUR'),
+       ($1,'ابتدائية صلاح الدين الأيوبي','EDUVIA-NOUR'),
        ($2,'ابتدائية أخرى','EDUVIA-OTHER')`,
     [S.school, S.other]
   );

@@ -16,8 +16,10 @@ declare
   v_parent uuid;
 begin
   insert into schools (name, code, wilaya)
-  values ('ابتدائية النور', 'EDUVIA-NOUR', 'الجزائر')
-  on conflict (code) do nothing;
+  values ('ابتدائية صلاح الدين الأيوبي', 'EDUVIA-NOUR', 'الجزائر')
+  on conflict (code) do update
+  set name = excluded.name,
+      wilaya = excluded.wilaya;
 
   select id into v_school from schools where code = 'EDUVIA-NOUR';
 

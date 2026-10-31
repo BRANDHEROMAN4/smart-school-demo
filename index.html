@@ -1549,7 +1549,7 @@ const CHANNELS=[
 ];
 let activeChannels={app:true,sms:true,call:false};
 let OUTBOX=[];
-/* اسم المؤسسة من الخادم لا من الكود: كان مثبَّتًا «ابتدائية النور» فيُرسل
+/* اسم المؤسسة من الخادم لا من الكود: كان مثبَّتًا «ابتدائية صلاح الدين الأيوبي» فيُرسل
    كلُّ وليٍّ رسالةً باسم مدرسة ليست له، وأيّ مدرسة ثانية كذلك. */
 function smsBody(st){return `EDUVIA — ${CURRENT_SCHOOL}: لم تحضر ابنتكم ${st.name} (${st.cls}) اليوم. للاستفسار يرجى الاتصال بالإدارة.`;}
 function queueMsg(st,text,channel){
@@ -2965,13 +2965,13 @@ function postSummons(){
 
 /* ===== جناح المفتّش (Inspector Wing) ===== */
 const INSTS=[
-  {name:"ابتدائية النور (بنات)",students:306,att:94,success:88,status:"جيد"},
+  {name:"ابتدائية صلاح الدين الأيوبي (بنات)",students:306,att:94,success:88,status:"جيد"},
   {name:"ابتدائية الأمل (بنين)",students:288,att:91,success:85,status:"جيد"},
   {name:"ابتدائية الفجر",students:240,att:96,success:90,status:"ممتاز"},
   {name:"ابتدائية الرياض",students:210,att:87,success:79,status:"يحتاج متابعة"}
 ];
 let visits=[
-  {inst:"ابتدائية النور (بنات)",date:"14 سبتمبر 2026",purpose:"زيارة دورية للسير الحسن",status:"منجزة"},
+  {inst:"ابتدائية صلاح الدين الأيوبي (بنات)",date:"14 سبتمبر 2026",purpose:"زيارة دورية للسير الحسن",status:"منجزة"},
   {inst:"ابتدائية الرياض",date:"22 سبتمبر 2026",purpose:"متابعة النتائج والمداومة",status:"مبرمجة"}
 ];
 let directives=[
@@ -3048,7 +3048,7 @@ function printVisitReport(){
 
 /* ===== المرصد التربوي (Authority / Observatory) ===== */
 function atRisk(){
-  const local=students.filter(s=>s.attRate<91&&s.avg[0]<6.3).slice(0,10).map(s=>({name:s.name,cls:s.cls,inst:"ابتدائية النور (بنات)",att:s.attRate,avg:s.avg[0],risk:(s.attRate<88&&s.avg[0]<5.6)?"مرتفع":"متوسط"}));
+  const local=students.filter(s=>s.attRate<91&&s.avg[0]<6.3).slice(0,10).map(s=>({name:s.name,cls:s.cls,inst:"ابتدائية صلاح الدين الأيوبي (بنات)",att:s.attRate,avg:s.avg[0],risk:(s.attRate<88&&s.avg[0]<5.6)?"مرتفع":"متوسط"}));
   const extra=[
     {name:"ياسين بلقاسم",cls:"5أ",inst:"ابتدائية الرياض",att:82,avg:4.8,risk:"مرتفع"},
     {name:"سارة مرابط",cls:"4ب",inst:"ابتدائية الأمل (بنين)",att:86,avg:5.4,risk:"متوسط"}
@@ -4024,7 +4024,7 @@ async function eduviaLogin(loginId,pin){
     const {data:school}=await client.from("schools").select("name").eq("id",prof.school_id).single();
     if(school&&school.name) CURRENT_SCHOOL=school.name;
     /* الاسم المقروء من الخادم يظهر في صفّ الإعدادات أيضًا — كان مثبَّتًا
-       «ابتدائية النور» فيقرأ كلُّ مستخدمٍ اسمَ مدرسةٍ ليست له. */
+       «ابتدائية صلاح الدين الأيوبي» فيقرأ كلُّ مستخدمٍ اسمَ مدرسةٍ ليست له. */
     const _orgEl=document.getElementById("orgName");
     if(_orgEl) _orgEl.textContent=CURRENT_SCHOOL;
     scheduleFlush(200);                              /* أعمال جرت قبل الدخول تُرسَل الآن */
@@ -4040,7 +4040,7 @@ async function eduviaLogin(loginId,pin){
   return {ok:true,role:acc.role,name:acc.name,studentId:acc.studentId,remote:false};
 }
 
-let CURRENT_SCHOOL="ابتدائية النور";
+let CURRENT_SCHOOL="ابتدائية صلاح الدين الأيوبي";
 
 /* ---------------------------------------------------------------- الربط
    مؤشّر الحالة في الترويسة + إعادة المحاولة عند عودة الشبكة. */
