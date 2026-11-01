@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>بوابة الموظفين · EDUVIA</title>
+<style>
+:root{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#14203a;background:#edf3f8}*{box-sizing:border-box}body{margin:0;min-height:100vh}.top{background:linear-gradient(135deg,#16366b,#1e8fd0);color:#fff;padding:18px 20px;display:flex;justify-content:space-between;align-items:center}.top b{font-size:20px}.wrap{max-width:980px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 5px 20px #20304418}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:10px;padding:12px 16px;font-weight:800;cursor:pointer;background:#edf1f6;color:#263b5c}.btn.primary{background:#1e8fd0;color:#fff}.btn.good{background:#2fa25a;color:#fff}.btn.red{background:#d23b3b;color:#fff}input{width:100%;border:1px solid #dce3ec;border-radius:10px;padding:13px;font-size:16px;direction:ltr;text-align:center}.status{min-height:78px;border-radius:12px;padding:14px;margin-top:12px;background:#f6f8fb}.status.ok{background:#e6f6ee;color:#166a36}.status.bad{background:#fbe9e9;color:#9c1d1d}.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.kpi div{background:#f6f8fb;border-radius:10px;padding:10px;text-align:center}.kpi b{display:block;font-size:22px}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}th,td{border-bottom:1px solid #edf0f4;padding:8px;text-align:right}#videoBox{display:none;position:fixed;inset:0;background:#091422ec;z-index:20;align-items:center;justify-content:center;flex-direction:column;padding:16px;color:#fff}video{width:min(92vw,560px);border-radius:14px;background:#000}@media(max-width:720px){.grid{grid-template-columns:1fr}.kpi{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="top"><div><b>بوابة الموظفين</b><div id="school">ابتدائية صلاح الدين الأيوبي</div></div><div id="clock"></div></div>
+<div class="wrap">
+  <div class="card" style="margin-bottom:14px">
+    <b>المُشغّل</b>
+    <div class="actions" style="margin-top:10px">
+      <input id="loginId" placeholder="رقم الدخول" style="max-width:220px" autocomplete="username">
+      <input id="pin" type="password" inputmode="numeric" placeholder="الرمز السرّي" style="max-width:220px" autocomplete="current-password">
+      <button class="btn primary" onclick="login()">دخول بوابة الموظفين</button>
+      <button class="btn" onclick="logout()">خروج الحساب</button>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>تعريف الموظف</h3>
+      <div class="actions"><button class="btn good" id="entryBtn" onclick="setDirection('entry')">🟢 دخول</button><button class="btn" id="exitBtn" onclick="setDirection('exit')">🔴 خروج</button></div>
+      <div style="margin-top:12px"><input id="cardInput" placeholder="QR STAFF-0001 أو STAFF-0001" onkeydown="if(event.key==='Enter')readManual()"></div>
+      <div class="actions" style="margin-top:10px"><button class="btn primary" onclick="openScanner()">📷 مسح QR</button><button class="btn" onclick="startNfc()">📶 قراءة NFC</button><button class="btn" onclick="readManual()">⌨️ تسجيل يدوي</button></div>
+      <div id="status" class="status">بانتظار بطاقة الموظف…</div>
+      <div class="kpi"><div><span>دخول اليوم</span><b id="entryCount">0</b></div><div><span>خروج اليوم</span><b id="exitCount">0</b></div><div><span>غير مزامن</span><b id="pendingCount">0</b></div></div>
+    </div>
+    <div class="card"><h3>آخر عبورات الموظفين</h3><div id="todayLog"><table><tbody><tr><td>لا توجد بيانات بعد.</td></tr></tbody></table></div></div>
+  </div>
+</div>
+<div id="videoBox"><b>وجّه الكاميرا إلى رمز QR الخاص بالموظف</b><video id="video" playsinline muted></video><button class="btn" style="margin-top:10px" onclick="closeScanner()">إلغاء</button></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+const CONFIG={url:'https://zyzzbdmfiuxnzgyjcgtj.supabase.co',key:'sb_publishable_VoxiEoJFCRUHLkAz3lYrsw_gWYdHfg5'};
+let client=null,profile=null,direction='entry',stream=null,timer=null,events=[];
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function canon(v){let d=String(v||'').replace(/\D/g,'');if(/^00213/.test(d))d=d.slice(5);else if(/^213/.test(d))d=d.slice(3);d=d.replace(/^0+/,'');return /^\d{9}$/.test(d)?'0'+d:String(v||'').trim()}
+function emailFor(v){return canon(v).toLowerCase().replace(/[^a-z0-9._-]/g,'-')+'@eduvia.local'}
+function clock(){document.getElementById('clock').textContent=new Date().toLocaleString('ar-DZ',{dateStyle:'medium',timeStyle:'medium'})}setInterval(clock,1000);clock();
+function initClient(){if(!client)client=window.supabase.createClient(CONFIG.url,CONFIG.key,{auth:{persistSession:true}});return client}
+async function login(){try{const c=initClient();const loginId=document.getElementById('loginId').value.trim();const pin=document.getElementById('pin').value;const {error}=await c.auth.signInWithPassword({email:emailFor(loginId),password:pin});if(error)throw error;await checkProfile();}catch(e){showStatus('تعذر الدخول: '+(e.message||e),false)}}
+async function logout(){if(client)await client.auth.signOut();profile=null;showStatus('تم تسجيل خروج حساب البوابة.',true)}
+async function checkProfile(){const c=initClient();const {data:{user}}=await c.auth.getUser();if(!user)return;const {data,error}=await c.from('profiles').select('id,role,display_name,school_id,active').eq('id',user.id).maybeSingle();if(error||!data||!data.active)throw new Error(error?.message||'الحساب غير نشط');if(!['director','supervisor','reception'].includes(data.role))throw new Error('هذه البوابة متاحة للمديرة والناظر والأمانة فقط');profile=data;showStatus('تم فتح بوابة الموظفين للحساب: '+data.display_name,true)}
+function setDirection(v){direction=v;document.getElementById('entryBtn').className=v==='entry'?'btn good':'btn';document.getElementById('exitBtn').className=v==='exit'?'btn red':'btn'}
+function showStatus(text,ok){const el=document.getElementById('status');el.className='status '+(ok?'ok':'bad');el.textContent=text}
+function cardFromPayload(raw){let s=String(raw||'').trim();if(s.startsWith('{')){try{s=JSON.parse(s).card||JSON.parse(s).card_no||s}catch(e){}}if(/^STAFF-\d+/i.test(s))return s.toUpperCase().replace(/\s+/g,'');return null}
+function readManual(){const value=document.getElementById('cardInput').value;document.getElementById('cardInput').value='';if(value)recordCard(value,'manual')}
+function scannerSupported(){return typeof window.BarcodeDetector==='function'&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia}
+async function openScanner(){if(!scannerSupported()){showStatus('مسح QR غير مدعوم. استخدم Chrome على Android أو الإدخال اليدوي.',false);return}const box=document.getElementById('videoBox'),video=document.getElementById('video');box.style.display='flex';try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});video.srcObject=stream;await video.play();const detector=new BarcodeDetector({formats:['qr_code','code_128']});timer=setInterval(async()=>{try{const found=await detector.detect(video);if(found&&found[0]){closeScanner();recordCard(found[0].rawValue,'qr')}}catch(e){}},350)}catch(e){closeScanner();showStatus('تعذر تشغيل الكاميرا: '+(e.message||e),false)}}
+function closeScanner(){clearInterval(timer);timer=null;if(stream){stream.getTracks().forEach(t=>t.stop())}stream=null;document.getElementById('videoBox').style.display='none'}
+async function startNfc(){if(!('NDEFReader' in window)){showStatus('NFC غير مدعوم بهذا المتصفح أو الجهاز. استخدم Chrome Android فوق HTTPS وبطاقة قابلة للقراءة.',false);return}try{const reader=new NDEFReader();await reader.scan();reader.onreading=event=>{const d=new TextDecoder();let text='';for(const r of event.message.records){try{text+=d.decode(r.data)}catch(e){}}recordCard(text,'nfc')};showStatus('NFC جاهز — قرّب البطاقة للجهاز.',true)}catch(e){showStatus('تعذر تشغيل NFC: '+(e.message||e),false)}}
+async function recordCard(raw,method){const card=cardFromPayload(raw);if(!card){showStatus('بطاقة غير صالحة. الصيغة STAFF-0001.',false);return}if(!client){showStatus('يجب تسجيل دخول حساب بوابة الموظفين أولًا.',false);return}try{await checkProfile();const {data:cards,error}=await client.from('staff_cards').select('id,staff_id,card_no,active,method,staff:staff_id(full_name,job_title)').eq('card_no',card).limit(1);if(error)throw error;if(!cards||!cards[0]||!cards[0].active){showStatus('بطاقة '+card+' غير مسجلة أو ملغاة.',false);return}const c=cards[0];const row={staff_id:c.staff_id,card_id:c.id,direction,method,device_id:localStorage.getItem('eduvia_gate_device')||'staff-kiosk-1',client_id:crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random(),at_time:new Date().toISOString(),day:new Date().toLocaleDateString('en-CA')};const {error:writeError}=await client.from('staff_gate_log').insert(row);if(writeError)throw writeError;events.unshift({...row,staff:c.staff});renderEvents();showStatus((direction==='entry'?'دخول ✅':'خروج ✅')+' — '+c.staff.full_name+' · '+c.staff.job_title,true)}catch(e){const online=navigator.onLine;if(!online){queueOffline(raw,method)}else showStatus('تعذر التسجيل: '+(e.message||e),false)}}
+function queueOffline(raw,method){let q=[];try{q=JSON.parse(localStorage.getItem('staff_gate_queue')||'[]')}catch(e){}q.push({raw,method,direction,device_id:'staff-kiosk-1',client_id:Date.now()+'-'+Math.random()});localStorage.setItem('staff_gate_queue',JSON.stringify(q));showStatus('سُجّل مؤقتًا دون شبكة وسيُزامن لاحقًا. احتفظ بالجهاز متصلًا.',true);updatePending()}
+async function syncOffline(){if(!navigator.onLine||!client)return;let q=[];try{q=JSON.parse(localStorage.getItem('staff_gate_queue')||'[]')}catch(e){return}if(!q.length)return;const remaining=[];for(const item of q){const card=cardFromPayload(item.raw);if(!card){remaining.push(item);continue}const {data:cards}=await client.from('staff_cards').select('id,staff_id,active').eq('card_no',card).limit(1);const c=cards&&cards[0];if(!c||!c.active){remaining.push(item);continue}const {error}=await client.from('staff_gate_log').insert({staff_id:c.staff_id,card_id:c.id,direction:item.direction,method:item.method==='nfc'?'nfc':'manual',device_id:item.device_id,client_id:item.client_id,at_time:new Date().toISOString(),day:new Date().toLocaleDateString('en-CA')});if(error)remaining.push(item)}localStorage.setItem('staff_gate_queue',JSON.stringify(remaining));updatePending();if(q.length>remaining.length)showStatus('تمت مزامنة سجلات البوابة المؤقتة.',true)}
+function updatePending(){let n=0;try{n=JSON.parse(localStorage.getItem('staff_gate_queue')||'[]').length}catch(e){}document.getElementById('pendingCount').textContent=n}
+function renderEvents(){const list=events.slice(0,12);const entry=list.filter(e=>e.direction==='entry').length,exit=list.filter(e=>e.direction==='exit').length;document.getElementById('entryCount').textContent=entry;document.getElementById('exitCount').textContent=exit;document.getElementById('todayLog').innerHTML='<table><thead><tr><th>الموظف</th><th>الحركة</th><th>الطريقة</th></tr></thead><tbody>'+list.map(e=>'<tr><td>'+esc(e.staff?.full_name||'موظف')+'</td><td>'+esc(e.direction==='entry'?'دخول':'خروج')+'</td><td>'+esc(e.method==='qr'?'QR':e.method==='nfc'?'NFC':'يدوي')+'</td></tr>').join('')+'</tbody></table>';updatePending()}
+window.addEventListener('online',syncOffline);window.addEventListener('load',()=>{localStorage.setItem('eduvia_gate_device','staff-kiosk-1');updatePending();initClient().auth.getSession().then(()=>checkProfile().catch(()=>{})).catch(()=>{})});
+</script>
+</body>
+</html>
