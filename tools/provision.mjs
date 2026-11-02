@@ -23,7 +23,18 @@
  *  وأولياء أمورهنّ (الوليّ يدخل برقم هاتفه لا ببطاقة).
  * ==========================================================================*/
 
-import { writeFileSync, openSync, closeSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, openSync, closeSync, existsSync } from "node:fs";
+
+// تحميل إعدادات الاختبار المحلية دون كشف المفاتيح في Git أو في الكود.
+try {
+  if (existsSync(".env.local")) {
+    for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
+      const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      if (!match || process.env[match[1]]) continue;
+      process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
+    }
+  }
+} catch {}
 
 const URL_BASE = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -183,7 +194,7 @@ async function main() {
   let made = 0, reused = 0;
 
   /* ---------------------------------------------- حسابات التلاميذ */
-  for (const s of students) {
+  if (!ONLY_PARENT) for (const s of students) {
     const pin = randomPin();
     try {
       const { id, created } = DRY
@@ -211,7 +222,7 @@ async function main() {
     ["inspector",  "المفتّش سعيد",           "inspector"],
     ["authority",  "مديرية التربية",         "authority"],
   ];
-  for (const [loginId, name, role] of staffAccounts) {
+  if (!ONLY_PARENT) for (const [loginId, name, role] of staffAccounts) {
     const pin = randomPin();
     try {
       const { id, created } = DRY
@@ -296,7 +307,17 @@ async function main() {
      وإن كان الملفّ مفتوحًا في Excel (EBUSY) نكتب نسخة إنقاذ بدلًا منه:
      الرموز وُلِّدت الآن ولا تُخزَّن في أي مكان آخر — ضياعها يعني حسابات
      قائمة برمزٍ لا يعرفه أحد. */
-  const csv = "﻿" + roster.map((r) => r.map((c) => `"${c}"`).join(",")).join("\r\n");
+  let csv = "﻿" + roster.map((r) => r.map((c) => `"${c}"`).join(",")).join("\r\n");
+  if (!DRY && ONLY_PARENT && existsSync("roster.csv") && RESET) {
+    const existing = readFileSync("roster.csv", "utf8")
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter((line) => line && !line.includes(`"${ONLY_PARENT}"`));
+    const newLines = csv.replace(/^\uFEFF/, "").split(/\r?\n/);
+    const header = existing[0] || newLines[0];
+    const keep = existing.slice(header === existing[0] ? 1 : 0).filter(Boolean);
+    csv = "﻿" + [header, ...keep, ...newLines.slice(1)].join("\r\n");
+  }
   if (DRY) {
     console.log("\n✔ عرض فقط: لم تُنشأ حسابات ولم تُكتب roster.csv.");
   } else {

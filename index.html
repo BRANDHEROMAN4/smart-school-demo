@@ -564,6 +564,16 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
         <table id="prTable"><thead><tr><th>التلميذة</th><th>وليّ الأمر</th><th>الهاتف</th><th>وسيلة الإشعار</th><th>الحالة</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
+    <div class="panel" id="directorParentCredentials" style="display:none">
+      <h2>🔐 أرقام دخول أولياء الأمر</h2>
+      <p class="muted" style="margin-top:0">تظهر هذه الميزة للمديرة فقط. تُسمّى عملية الإصدار أو التجديد، ويظهر الرمز الجديد مرة واحدة.</p>
+      <div class="actions" style="gap:8px;flex-wrap:wrap">
+        <input id="credentialParentName" class="search" style="min-width:220px" placeholder="اسم وليّ الأمر" aria-label="اسم وليّ الأمر">
+        <input id="credentialParentPhone" class="search" style="min-width:220px;direction:ltr;text-align:center" placeholder="رقم الهاتف 0555123456" inputmode="tel" aria-label="رقم هاتف وليّ الأمر">
+        <button class="btn primary" onclick="issueParentCredential()">إنشاء / تجديد الرمز</button>
+      </div>
+      <div id="credentialAdminList" style="margin-top:12px"></div>
+    </div>
     <div class="panel" id="parentSubscriptionAdmin" style="display:none">
       <h2>💳 تفعيل اشتراك وليّ الأمر</h2>
       <p class="muted" style="margin-top:0">التفعيل من مسؤول المدير أو الأمانة فقط، بعد قبض المبلغ وتسجيل رقم الوصل.</p>
@@ -1176,6 +1186,11 @@ function render(){
   // Parents
   document.querySelector("#prTable tbody").innerHTML=students.map(st=>
     `<tr><td>${st.name}</td><td>${st.parent}</td><td>${ltr(fmtPhone(st.phone))}</td><td>${st.notify}</td><td><span class="pill ok">مفعّل</span></td></tr>`).join("");
+  const credentialAdmin=document.getElementById("directorParentCredentials");
+  if(credentialAdmin){
+    credentialAdmin.style.display=currentRole=== "director"?"block":"none";
+    if(credentialAdmin.style.display=== "block") refreshParentCredentialLog();
+  }
   const subAdmin=document.getElementById("parentSubscriptionAdmin");
   if(subAdmin){
     subAdmin.style.display=["director","reception"].includes(currentRole)?"block":"none";
@@ -1645,6 +1660,42 @@ function addStudent(){
   if(q){ st.clientId=q.clientId; st.source="new"; }
   closeModal();render();toast("تمّت الإضافة ✅",`${name} · ${g}${sec}`,"g");
   document.getElementById("ns_name").value="";document.getElementById("ns_parent").value="";document.getElementById("ns_phone").value="";
+  /* إنشاء حساب وليّ الأمر وإظهار الرمز للمديرة مباشرةً عند التسجيل الميداني. */
+  if(currentRole=== "director") issueParentCredential(phone,pnameRaw,true,true);
+}
+
+async function issueParentCredential(phone,displayName,reset=true,silent=false){
+  if(currentRole!=="director"){
+    if(!silent) toast("صلاحية محدودة","أرقام دخول أولياء الأمر للمديرة فقط.","a");
+    return;
+  }
+  const name=String(displayName||(document.getElementById("credentialParentName")?.value||"")).trim();
+  const login=canonPhone(phone||(document.getElementById("credentialParentPhone")?.value||""));
+  if(!/^0\d{9}$/.test(login)||!name){
+    if(!silent) toast("بيانات ناقصة","أدخلي اسم وليّ الأمر ورقم هاتف صحيحًا.","a");
+    return;
+  }
+  const client=await ensureClient();
+  if(!client){ toast("الخادم غير متصل","الرمز لا يمكن إنشاءه إلا عند تهيئة Supabase.","a"); return; }
+  try{
+    const session=(await client.auth.getSession()).data.session;
+    if(!session){ toast("انتهت الجلسة","سجّلي الدخول مرة أخرى.","a"); return; }
+    const {data,error}=await client.functions.invoke("provision-parent",{body:{phone:login,displayName:name,reset}});
+    if(error) throw error;
+    if(!data?.pin) throw new Error("لم يرجع الخادم رمزًا");
+    const list=document.getElementById("credentialAdminList");
+    if(list) list.innerHTML=`<div class="panel" style="border:2px solid #25b565;margin:0;padding:12px"><b>${esc(name)}</b><br><span class="muted">رقم الدخول: </span><span class="code">${esc(login)}</span><br><span class="muted">الرمز الجديد: </span><strong style="font-size:22px;direction:ltr;display:inline-block">${esc(data.pin)}</strong><button class="btn" style="margin-inline-start:10px" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(data.pin)}')">نسخ</button></div>`;
+    toast(reset?"تم تجديد رمز وليّ الأمر 🔐":"تم إنشاء حساب وليّ الأمر 🔐",`رقم الدخول: ${login} · الرمز: ${data.pin}`,"g");
+    await refreshParentCredentialLog();
+  }catch(e){ toast("تعذّر إنشاء الحساب",String(e?.message||e),"a"); }
+}
+async function refreshParentCredentialLog(){
+  if(currentRole!=="director") return;
+  const client=await ensureClient(); if(!client) return;
+  const {data,error}=await client.from("parent_credential_issuances").select("login_id,display_name,action,issued_at").order("issued_at",{ascending:false}).limit(20);
+  const list=document.getElementById("credentialAdminList"); if(!list||error) return;
+  const existing=list.querySelector("strong")?list.innerHTML:"";
+  list.innerHTML=existing+(data||[]).map(r=>`<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px"><span>${esc(r.display_name)} <span class="code">${esc(r.login_id)}</span></span><span class="muted">${r.action=== "reset"?"تجديد":"إصدار"} · ${new Date(r.issued_at).toLocaleString("ar-DZ")}</span></div>`).join("");
 }
 
 /* ================= التنقّل / المظهر / الأدوات ================= */
