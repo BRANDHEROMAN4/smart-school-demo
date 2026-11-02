@@ -86,7 +86,7 @@ async function api(path, { method = "GET", body, headers = {} } = {}) {
 }
 
 /* ------------------------------------------------------- إنشاء مستخدم */
-async function createUser(loginId, pin, meta) {
+async function createUser(loginId, pin, meta, resetExisting = RESET) {
   const email = toEmail(loginId);
   const r = await api("/auth/v1/admin/users", {
     method: "POST",
@@ -99,7 +99,7 @@ async function createUser(loginId, pin, meta) {
     if (list.ok && Array.isArray(list.json?.users)) {
       const found = list.json.users.find((u) => u.email === email);
       if (found) {
-        if (RESET) {
+        if (resetExisting) {
           const u = await api(`/auth/v1/admin/users/${found.id}`, {
             method: "PUT",
             body: { password: pin },
@@ -188,7 +188,7 @@ async function main() {
     try {
       const { id, created } = DRY
         ? { id: "00000000-0000-0000-0000-000000000000", created: true }
-        : await createUser(s.card_no, pin, { role: "student", name: s.full_name });
+        : await createUser(s.card_no, pin, { role: "student", name: s.full_name }, false);
       created ? made++ : reused++;
       if (!DRY) {
         await upsertProfile({
@@ -216,7 +216,7 @@ async function main() {
     try {
       const { id, created } = DRY
         ? { id: "00000000-0000-0000-0000-000000000000", created: true }
-        : await createUser(loginId, pin, { role, name });
+        : await createUser(loginId, pin, { role, name }, false);
       created ? made++ : reused++;
       if (!DRY) {
         await upsertProfile({
@@ -264,7 +264,7 @@ async function main() {
     try {
       const { id, created } = DRY
         ? { id: "00000000-0000-0000-0000-000000000000", created: true }
-        : await createUser(phone, pin, { role: "parent", name: who });
+        : await createUser(phone, pin, { role: "parent", name: who }, RESET);
       created ? made++ : reused++;
       if (!DRY) {
         await upsertProfile({
