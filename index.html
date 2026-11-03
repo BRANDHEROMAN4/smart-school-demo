@@ -196,6 +196,33 @@ body.has-install #toasts{bottom:78px}
 .parent-app-shell #login{background:linear-gradient(135deg,#16366B 0%,#1E8FD0 55%,#34B45E 100%)}
 .parent-app-shell #login .box{max-width:420px;border-radius:22px}.parent-app-shell .demoacc{display:none}
 .parent-app-shell .sidebar{box-shadow:0 4px 18px rgba(22,54,107,.18)}
+.parent-mobile-nav,.parent-mobile-sheet{display:none}
+@media(max-width:760px){
+  .parent-app-shell .sidebar{display:none}
+  .parent-app-shell .main{width:100%;max-width:none;margin:0;padding:8px 12px 96px}
+  .parent-app-shell .topbar{position:sticky;top:0;z-index:35;margin:-8px -12px 10px;padding:9px 12px;border-radius:0;min-height:58px}
+  .parent-app-shell .topbar h1{font-size:17px;line-height:1.25}
+  .parent-app-shell #dateLine,.parent-app-shell .rolechip,.parent-app-shell .syncchip,.parent-app-shell .trial,.parent-app-shell .badge{display:none!important}
+  .parent-app-shell .top-actions{gap:5px}
+  .parent-app-shell .top-actions .icon-btn{width:36px;height:36px;padding:0}
+  .parent-app-shell .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .parent-app-shell .grid2{grid-template-columns:1fr;gap:10px}
+  .parent-app-shell .panel{padding:14px;border-radius:16px}
+  .parent-app-shell .section-head{gap:8px}
+  .parent-app-shell .section-head h2,.parent-app-shell .panel h2{font-size:14px}
+  .parent-mobile-nav{position:fixed;z-index:80;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));inset-inline:10px;bottom:10px;height:74px;padding:7px 5px;background:color-mix(in srgb,var(--surface) 94%,transparent);border:1px solid var(--border);border-radius:22px;box-shadow:0 12px 36px rgba(15,35,75,.22);backdrop-filter:blur(16px)}
+  .parent-mobile-nav button{border:0;background:transparent;color:var(--muted);font-family:inherit;font-size:10px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:16px;padding:4px 2px;min-width:0}
+  .parent-mobile-nav button span{font-size:20px;line-height:1}
+  .parent-mobile-nav button.active{color:#fff;background:var(--grad);box-shadow:0 6px 16px rgba(30,143,208,.22)}
+  .parent-mobile-sheet{position:fixed;z-index:79;inset:0;background:rgba(10,18,38,.42);align-items:flex-end;justify-content:center}
+  .parent-mobile-sheet.open{display:flex}
+  .parent-mobile-sheet .sheet{width:min(100%,520px);background:var(--surface);border-radius:24px 24px 0 0;padding:14px 14px 90px;box-shadow:var(--shadow-lg)}
+  .parent-mobile-sheet .sheet-head{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 12px;font-weight:800}
+  .parent-mobile-sheet .sheet-head button{border:0;background:var(--surface-2);width:34px;height:34px;border-radius:50%;font-family:inherit}
+  .parent-mobile-sheet .sheet-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .parent-mobile-sheet .sheet-grid button{border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:14px;padding:12px 10px;font-family:inherit;font-weight:750;display:flex;align-items:center;gap:8px;text-align:start}
+  .parent-mobile-sheet .sheet-grid button span{font-size:20px}
+}
 
 /* ===== Academic / added modules ===== */
 .sel{padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:13px;font-family:inherit}
@@ -1769,7 +1796,8 @@ function showPage(p){
   }
   if(p==="cinbox")renderInbox();
   if(p==="notifications"){unread=0;updateBell();}
-  window.scrollTo(0,0);
+ if(typeof syncParentBottomNav==="function") syncParentBottomNav(p);
+ window.scrollTo(0,0);
 }
 document.querySelectorAll("#nav button[data-page]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
 function filterTable(input,tid){
@@ -4330,7 +4358,46 @@ if(SYNC.mode==="remote" && QUEUE.length) scheduleFlush(1500);
   const loginBox=document.querySelector("#login .box p"); if(loginBox) loginBox.textContent="تطبيق وليّ الأمر — متابعة ابنتك لحظة بلحظة";
   const loginLabel=document.querySelector('label[for="loginId"]'); if(loginLabel) loginLabel.textContent="رقم هاتف وليّ الأمر أو معرّف الحساب";
   const loginInput=document.getElementById("loginId"); if(loginInput) loginInput.placeholder="0555123456 أو معرّف وليّ الأمر";
+
+  const nav=document.createElement("nav");
+  nav.className="parent-mobile-nav";
+  nav.setAttribute("aria-label","تنقل تطبيق وليّ الأمر");
+  nav.innerHTML=`
+    <button type="button" data-parent-page="phome" class="active"><span>🏠</span><b>نظرة عامة</b></button>
+    <button type="button" data-parent-page="pattendance"><span>🗓️</span><b>الحضور</b></button>
+    <button type="button" data-parent-page="pgrades"><span>📊</span><b>النقاط</b></button>
+    <button type="button" data-parent-more="true"><span>☰</span><b>المزيد</b></button>`;
+  document.body.appendChild(nav);
+
+  const sheet=document.createElement("div");
+  sheet.className="parent-mobile-sheet";
+  sheet.id="parentMobileSheet";
+  sheet.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="أقسام وليّ الأمر">
+    <div class="sheet-head"><span>المزيد من الأقسام</span><button type="button" data-parent-close="true" aria-label="إغلاق">✕</button></div>
+    <div class="sheet-grid">
+      <button type="button" data-parent-page="pwork"><span>📚</span><b>الواجبات</b></button>
+      <button type="button" data-parent-page="pnotes"><span>📌</span><b>السلوك والملاحظات</b></button>
+      <button type="button" data-parent-page="psummon"><span>📨</span><b>الاستدعاءات</b></button>
+      <button type="button" data-parent-page="pannounce"><span>📢</span><b>الإعلانات</b></button>
+      <button type="button" data-parent-page="paccount"><span>⚙️</span><b>حسابي</b></button>
+    </div>
+  </div>`;
+  document.body.appendChild(sheet);
+
+  nav.querySelectorAll("[data-parent-page]").forEach(button=>button.addEventListener("click",()=>showPage(button.dataset.parentPage)));
+  sheet.querySelectorAll("[data-parent-page]").forEach(button=>button.addEventListener("click",()=>{sheet.classList.remove("open");showPage(button.dataset.parentPage);}));
+  nav.querySelector("[data-parent-more]").addEventListener("click",()=>sheet.classList.add("open"));
+  sheet.querySelector("[data-parent-close]").addEventListener("click",()=>sheet.classList.remove("open"));
+  sheet.addEventListener("click",event=>{if(event.target===sheet)sheet.classList.remove("open");});
 })();
+
+function syncParentBottomNav(page){
+  const nav=document.querySelector(".parent-mobile-nav");
+  if(!nav)return;
+  nav.querySelectorAll("button[data-parent-page]").forEach(button=>button.classList.toggle("active",button.dataset.parentPage===page));
+  const more=nav.querySelector("[data-parent-more]");
+  if(more) more.classList.toggle("active",["pwork","pnotes","psummon","pannounce","paccount"].includes(page));
+}
 
 /* ================= PWA: تثبيت التطبيق على الهاتف =================
    كان زرّ التثبيت موجودًا في نموذج تطبيق الأولياء القديم؛ وبُني النموذج
