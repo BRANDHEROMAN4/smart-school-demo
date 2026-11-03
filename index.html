@@ -219,9 +219,11 @@ body.has-install #toasts{bottom:78px}
   .parent-welcome-card p{margin:4px 0 0;font-size:12px;color:#dcfce7}
   .parent-today-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#64748b;font-size:12px}
   .parent-today-bar strong{direction:ltr;color:#334155;font-size:15px;font-variant-numeric:tabular-nums}
-  .parent-inspiration{background:linear-gradient(135deg,#fff7ed,#fefce8)!important;border-color:#fde68a!important;text-align:center;color:#7c2d12!important;line-height:1.9!important}
-  .parent-inspiration b{display:block;font-family:"Traditional Arabic","Amiri","Noto Naskh Arabic",serif;font-size:17px;font-weight:700}
-  .parent-inspiration small{display:block;margin-top:4px;color:#a16207;font-size:11px}
+  .parent-inspiration{position:relative;overflow:hidden;background:linear-gradient(135deg,#eff6ff,#fdf2f8)!important;border:1px solid #bfdbfe!important;text-align:center;color:#1e3a5f!important;line-height:1.8!important;padding:13px 16px!important}
+  .parent-inspiration::before{content:"";position:absolute;inset-inline-start:-20px;top:-24px;width:78px;height:78px;border-radius:50%;background:rgba(96,165,250,.14)}
+  .parent-inspiration .inspiration-label{display:block;margin-bottom:5px;color:#2563eb;font-size:11px;font-weight:800;letter-spacing:.1px}
+  .parent-inspiration b{display:block;font-family:"Traditional Arabic","Amiri","Noto Naskh Arabic",serif;font-size:18px;font-weight:800}
+  .parent-inspiration small{display:block;margin-top:5px;color:#64748b;font-size:11px}
   .parent-home-summary{display:flex;gap:8px;overflow:hidden;margin-bottom:10px}
   .parent-home-summary .card{min-width:0;flex:1}
   .parent-home-summary .card .value{font-size:15px}
@@ -2967,13 +2969,18 @@ function parentTodayLabel(){
 function parentNowLabel(){return new Intl.DateTimeFormat("ar-DZ",{hour:"2-digit",minute:"2-digit"}).format(new Date());}
 function parentDailyInspiration(){
   const items=[
-    {text:"﴿ وَقُل رَّبِّ زِدْنِي عِلْمًا ﴾",label:"آية صباحية · اللهم اجعل يومنا هذا بداية للخير والعلم"},
-    {text:"«مَنْ سَلَكَ طَرِيقًا يَلْتَمِسُ فِيهِ عِلْمًا سَهَّلَ اللَّهُ لَهُ طَرِيقًا إِلَى الْجَنَّةِ»",label:"حديث شريف · العلم نور يهدي صاحبه"},
-    {text:"التعلم رحلة، وكل محاولة صغيرة تقربك خطوة من هدفك.",label:"نصيحة صباحية · ابدأ يومك بابتسامة وعزيمة"},
-    {text:"العقل السليم في التعليم الذي ينمي الفضول والخلق معًا.",label:"حكمة اليوم · اجعل للخير أثرًا في بيتك ومدرستك"}
+    {icon:"🌤️",label:"آية صباحية",text:"﴿ وَقُل رَّبِّ زِدْنِي عِلْمًا ﴾",note:"اللهم اجعل يومنا هذا بداية للخير والعلم"},
+    {icon:"✨",label:"حديث شريف",text:"«مَنْ سَلَكَ طَرِيقًا يَلْتَمِسُ فِيهِ عِلْمًا سَهَّلَ اللَّهُ لَهُ طَرِيقًا إِلَى الْجَنَّةِ»",note:"العلم نور يهدي صاحبه ويزيده خيرًا"},
+    {icon:"🌱",label:"نصيحة صباحية",text:"ابدأ يومك بابتسامة، وأهمل ما مضى وتفرغ لما تستطيع تحسينه اليوم.",note:"العناية الصغيرة اليومية تصنع فرقًا كبيرًا"},
+    {icon:"💡",label:"حكمة اليوم",text:"التعلم رحلة، وكل محاولة صغيرة تقربك خطوة من هدفك.",note:"اجعل للتجربة محاولة جديدة، ولا تجعل الخطأ نهاية"},
+    {icon:"📚",label:"معلومة تربوية",text:"شعور الابن بالأمان والاستماع إليه أهم بدايات نجاحه الدراسي.",note:"بضع دقائق من الاستماع الجادّ تقوي الثقة"},
+    {icon:"☀️",label:"آية صباحية",text:"﴿ وَأَن لَّيْسَ لِلْإِنسَانِ إِلَّـا مَا سَعَى ﴾",note:"اجعل كلمة تشجيع اليوم بداية لجهدها"},
+    {icon:"🤝",label:"نصيحة للوالد",text:"اسأل ابنتك عما أشعرها بالسعادة قبل أن تسألها عما أنجزت فقط.",note:"التوازن بين الاهتمام بالنتيجة والاهتمام بالروح"},
+    {icon:"🌿",label:"حكمة اليوم",text:"الأيام تُبنى من تفاصيل صغيرة نقوم بها بإتقان.",note:"النظام الهادئ أفضل من الضغط المتكرر"}
   ];
-  const day=Math.max(0,Math.floor(Date.now()/86400000));
-  return items[day%items.length];
+  const now=new Date();
+  const seed=now.getFullYear()*372+now.getMonth()*31+now.getDate();
+  return items[seed%items.length];
 }
 function startParentClock(){
   if(window.PARENT_CLOCK_TIMER) clearInterval(window.PARENT_CLOCK_TIMER);
@@ -2996,6 +3003,7 @@ function renderParentWing(){
   const daily=parentDailyInspiration();
   document.getElementById("phome").innerHTML=`
     <div class="panel parent-welcome-card"><b>متابعة إبنتي ${esc(parentFirstName(st))}</b><span>${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</span><p>معك لحظة وصولها وموعد مغادرتها</p></div>
+    <div class="panel parent-inspiration"><span class="inspiration-label">${esc(daily.icon)} ${esc(daily.label)}</span><b>${esc(daily.text)}</b><small>${esc(daily.note)}</small></div>
     <div class="panel" style="margin-bottom:10px">
       <div class="parent-today-bar"><span>اليوم</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><h2 style="margin:0">🚪 الدخول والخروج</h2><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
@@ -3004,7 +3012,6 @@ function renderParentWing(){
         <div class="gate-event"><b>🔴 مغادرتها المدرسة</b><strong>${ltr(gateStatus.exit)}</strong></div>
       </div>
     </div>
-    <div class="panel parent-inspiration"><b>${esc(daily.text)}</b><small>${esc(daily.label)}</small></div>
     <div class="parent-home-summary">
       <div class="card"><div class="label">نسبة الحضور</div><div class="value green">${pctTxt(parentStats.attendance)}</div></div>
       <div class="card"><div class="label">نسبة التأخير</div><div class="value amber">${parentStats.lateRate}%</div></div>
