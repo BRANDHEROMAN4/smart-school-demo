@@ -213,11 +213,12 @@ body.has-install #toasts{bottom:78px}
   .parent-gate-status .gate-event{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border-radius:14px;padding:12px;border:1px solid var(--border);background:var(--surface);min-width:0;direction:rtl}
   .parent-gate-status .gate-event b{font-size:13px;white-space:normal;line-height:1.5}
   .parent-gate-status .gate-event strong{font-size:17px;direction:ltr;white-space:nowrap;font-variant-numeric:tabular-nums}
-  .parent-welcome-card{background:linear-gradient(135deg,#dff5e9,#eefaf3)!important;border:1px solid #9bd4b3!important;color:#166534!important;padding:12px 14px!important;margin-bottom:10px!important;border-radius:16px!important}
-  .parent-welcome-card b{display:block;font-size:16px;line-height:1.55}
-  .parent-welcome-card p{margin:2px 0 0;font-size:13px;color:#3f7654}
+  .parent-welcome-card{background:linear-gradient(135deg,#fb7185 0%,#ec4899 48%,#be185d 100%)!important;border:1px solid rgba(190,24,93,.28)!important;color:#fff!important;padding:14px!important;margin-bottom:10px!important;border-radius:18px!important;box-shadow:0 8px 20px rgba(236,72,153,.18)!important}
+  .parent-welcome-card b{display:block;font-size:17px;line-height:1.35}
+  .parent-welcome-card span{display:block;margin-top:4px;font-size:13px;color:#fff0f6;line-height:1.45}
+  .parent-welcome-card p{margin:4px 0 0;font-size:12px;color:#fff0f6}
   .parent-today-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#64748b;font-size:12px}
-  .parent-today-bar strong{direction:ltr;color:#334155;font-size:13px;font-variant-numeric:tabular-nums}
+  .parent-today-bar strong{direction:ltr;color:#334155;font-size:15px;font-variant-numeric:tabular-nums}
   .parent-inspiration{background:linear-gradient(135deg,#fff7ed,#fefce8)!important;border-color:#fde68a!important;text-align:center;color:#7c2d12!important;line-height:1.9!important}
   .parent-inspiration b{display:block;font-family:"Traditional Arabic","Amiri","Noto Naskh Arabic",serif;font-size:17px;font-weight:700}
   .parent-inspiration small{display:block;margin-top:4px;color:#a16207;font-size:11px}
@@ -2889,6 +2890,11 @@ function parentFeaturesTableHTML(){
 function parentPaidLockedHTML(service){
   return `<div class="panel"><h2>🔒 ${esc(service)}</h2><div class="notice y"><b>هذه الخدمة متاحة للحساب المدفوع فقط.</b><br>حسابك مجاني حاليًا، ويظل تنبيه الدخول والتأخر والغياب والاستدعاء متاحًا مجانًا.</div><button class="btn primary" style="margin-top:8px" onclick="showPage('paccount')">عرض اشتراكات الحساب</button></div>`;
 }
+function parentShortTime(value){
+  const text=String(value||"").trim();
+  const match=text.match(/^(\d{1,2}:\d{2})(?::\d{2})?/);
+  return match?match[1]:text;
+}
 function parentGateStatus(st){
   const day=todayISO();
   const events=[];
@@ -2903,8 +2909,8 @@ function parentGateStatus(st){
   events.sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
   const entries=events.filter(e=>e.direction=== "entry" && e.time);
   const exits=events.filter(e=>e.direction=== "exit" && e.time);
-  const entry=entries.length?entries[entries.length-1].time:(String(st.time||"")||"");
-  const exit=exits.length?exits[exits.length-1].time:"";
+  const entry=entries.length?parentShortTime(entries[entries.length-1].time):(parentShortTime(String(st.time||"")||""));
+  const exit=exits.length?parentShortTime(exits[exits.length-1].time):"";
   if(!entry && !exit) return {entry:"—",exit:"—",status:"لم يُسجّل عبورها اليوم"};
   if(exit && (!entry || exit.localeCompare(entry)>=0)) return {entry:entry||"—",exit,status:"غادرت المؤسسة"};
   return {entry:entry||"—",exit:exit||"—",status:"موجودة داخل المؤسسة"};
@@ -2921,11 +2927,15 @@ function parentAttendanceStats(st){
   (Array.isArray(gateLog)?gateLog:[]).forEach(r=>{
     if(String(r.name||"")===String(st.name||"") && String(r.direction||"entry")=== "entry") events.push(r);
   });
-  const unique=new Map();
-  events.forEach(r=>unique.set(String(r.day||todayISO())+":"+String(r.time||""),r));
-  const entries=[...unique.values()];
+  const days=new Map();
+  events.forEach(r=>{
+    const day=String(r.day||todayISO()).slice(0,10);
+    if(!days.has(day)||r.late) days.set(day,r);
+  });
+  const entries=[...days.values()];
   const lateCount=entries.filter(r=>!!r.late).length;
-  return {attendance:Number.isFinite(Number(st.attRate))?Number(st.attRate):100,
+  const attendance=Number.isFinite(Number(st.attRate))?Math.max(0,Math.min(100,Number(st.attRate))):100;
+  return {attendance,
           lateRate:entries.length?Math.round(lateCount/entries.length*100):0,
           absence:Number(st.absDays||0)};
 }
@@ -2933,7 +2943,17 @@ function parentTodayLabel(){
   try{return new Intl.DateTimeFormat("ar-DZ",{weekday:"long",year:"numeric",month:"long",day:"numeric"}).format(new Date());}
   catch(e){return new Date().toLocaleDateString("ar-DZ");}
 }
-function parentNowLabel(){return new Intl.DateTimeFormat("ar-DZ",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date());}
+function parentNowLabel(){return new Intl.DateTimeFormat("ar-DZ",{hour:"2-digit",minute:"2-digit"}).format(new Date());}
+function parentDailyInspiration(){
+  const items=[
+    {text:"﴿ وَقُل رَّبِّ زِدْنِي عِلْمًا ﴾",label:"آية صباحية · اللهم اجعل يومنا هذا بداية للخير والعلم"},
+    {text:"«مَنْ سَلَكَ طَرِيقًا يَلْتَمِسُ فِيهِ عِلْمًا سَهَّلَ اللَّهُ لَهُ طَرِيقًا إِلَى الْجَنَّةِ»",label:"حديث شريف · العلم نور يهدي صاحبه"},
+    {text:"التعلم رحلة، وكل محاولة صغيرة تقربك خطوة من هدفك.",label:"نصيحة صباحية · ابدأ يومك بابتسامة وعزيمة"},
+    {text:"العقل السليم في التعليم الذي ينمي الفضول والخلق معًا.",label:"حكمة اليوم · اجعل للخير أثرًا في بيتك ومدرستك"}
+  ];
+  const day=Math.max(0,Math.floor(Date.now()/86400000));
+  return items[day%items.length];
+}
 function startParentClock(){
   if(window.PARENT_CLOCK_TIMER) clearInterval(window.PARENT_CLOCK_TIMER);
   const update=()=>document.querySelectorAll("[data-parent-clock]").forEach(el=>el.textContent=parentNowLabel());
@@ -2952,8 +2972,9 @@ function renderParentWing(){
   const latestSummons=SUMMONS.filter(x=>x.sid===st.id).slice(0,2);
   const latestHomework=HOMEWORK.filter(h=>h.cls===st.cls||h.cls=== "الكل").slice(0,2);
   const parentStats=parentAttendanceStats(st);
+  const daily=parentDailyInspiration();
   document.getElementById("phome").innerHTML=`
-    <div class="panel parent-welcome-card"><b>متابعة ${esc(parentFirstName(st))} ${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</b><p>معك لحظة وصولها وموعد مغادرتها</p></div>
+    <div class="panel parent-welcome-card"><b>متابعة إبنتي ${esc(parentFirstName(st))}</b><span>${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</span><p>معك لحظة وصولها وموعد مغادرتها</p></div>
     <div class="panel" style="margin-bottom:10px">
       <div class="parent-today-bar"><span>اليوم</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><h2 style="margin:0">🚪 الدخول والخروج</h2><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
@@ -2962,16 +2983,16 @@ function renderParentWing(){
         <div class="gate-event"><b>🔴 مغادرتها المدرسة</b><strong>${ltr(gateStatus.exit)}</strong></div>
       </div>
     </div>
+    <div class="panel parent-inspiration"><b>${esc(daily.text)}</b><small>${esc(daily.label)}</small></div>
     <div class="parent-home-summary">
       <div class="card"><div class="label">نسبة الحضور</div><div class="value green">${pctTxt(parentStats.attendance)}</div></div>
       <div class="card"><div class="label">نسبة التأخير</div><div class="value amber">${parentStats.lateRate}%</div></div>
       <div class="card"><div class="label">أيام الغياب</div><div class="value red">${parentStats.absence}</div></div>
     </div>
     <div class="panel"><h2>📨 الاستدعاءات</h2>${latestSummons.map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا استدعاءات حاليًا.</div>'}</div>
-    <div class="panel parent-inspiration"><b>﴿ وَقُل رَّبِّ زِدْنِي عِلْمًا ﴾</b><small>آية صباحية · صباح الخير، اجعلوا اليوم بداية جميلة للتعلّم</small></div>
     <div class="panel"><h2>📚 الواجبات القريبة</h2>${latestHomework.map(h=>`<div class="notice b"><b>${esc(h.subj)} · ${esc(h.due)}</b><div style="font-size:12.5px;margin-top:4px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}</div>`;
   document.getElementById("pattendance").innerHTML=`
-    <div class="panel parent-welcome-card"><b>متابعة ${esc(parentFirstName(st))} ${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</b></div>
+    <div class="panel parent-welcome-card"><b>متابعة إبنتي ${esc(parentFirstName(st))}</b><span>${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</span></div>
     <div class="panel"><h2>🚪 دخول وخروج اليوم</h2>
       <div class="parent-today-bar"><span>التاريخ والوقت الحالي</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
