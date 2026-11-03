@@ -83,9 +83,11 @@ html[data-theme="dark"] .syncchip.off{color:#f08a8a}
 .navhead:hover{background:rgba(255,255,255,.09)}
 .navhead .chev{margin-inline-start:auto;font-size:10px;opacity:.75;transition:transform .25s}
 .navsub{max-height:0;overflow:hidden;transition:max-height .28s ease;margin:2px 6px 2px 2px;border-inline-start:2px solid rgba(255,255,255,.13);padding-inline-start:4px}
-.navgroup.open>.navsub,.navgroup:hover>.navsub{max-height:440px}
-.navgroup.open>.navhead .chev,.navgroup:hover>.navhead .chev{transform:rotate(180deg)}
+.navgroup.open>.navsub{max-height:440px}
+.navgroup.open>.navhead .chev{transform:rotate(180deg)}
+.navhead.active{background:rgba(255,255,255,.16);color:#fff;box-shadow:inset 3px 0 0 rgba(255,255,255,.9)}
 .navsub button{font-size:13px;padding:10px 12px}
+.navsub button.active{background:rgba(255,255,255,.21);box-shadow:inset 3px 0 0 rgba(255,255,255,.72)}
 .side-foot{font-size:10.5px;opacity:.6;padding:14px 12px 4px;line-height:1.7}
 
 .main{margin-inline-start:250px;padding:24px 26px 60px;max-width:1550px}
@@ -1736,7 +1738,20 @@ async function refreshParentCredentialLog(){
 
 /* ================= التنقّل / المظهر / الأدوات ================= */
 const titles={dashboard:"لوحة التحكّم",students:"التلاميذ",classes:"الأقسام",teachers:"المعلّمون",cards:"البطاقات",attendance:"الحضور والغياب",gate:"الدخول والخروج",grades:"النقاط والمعدلات",timetable:"التوقيت الأسبوعي",thub:"أدوات المعلّم",calendar:"الرزنامة والأحداث",parents:"الأولياء",announcements:"الإعلانات",cinbox:"شكاوى واقتراحات التلاميذ",summons:"الاستدعاءات",notifications:"الإشعارات",stats:"الإحصائيات",reports:"التقارير",settings:"الإعدادات",ischome:"لوحة المفتّش",iscvisits:"الزيارات",isccheck:"قائمة التحقّق",iscnotes:"التعليمات والملاحظات",obshome:"المرصد التربوي",obsdropout:"الإنذار المبكّر بالتسرّب",obsmap:"الخريطة الإقليمية",obsreports:"التقارير الرسمية",shome:"لوحتي",sgrades:"نقاطي",sattendance:"حضوري",stimetable:"توقيتي",swork:"واجباتي",snotes:"ملاحظاتي",ssummons:"استدعاءات وليّ أمري",sannounce:"الإعلانات",complaints:"شكاوى واقتراحات"};
-function toggleGroup(h){h.parentElement.classList.toggle("open");}
+function toggleGroup(h){
+  const selectedGroup=h.parentElement;
+  const isOpen=selectedGroup.classList.contains("open");
+  document.querySelectorAll("#nav .navgroup.open").forEach(group=>{
+    if(group!==selectedGroup) group.classList.remove("open");
+  });
+  document.querySelectorAll("#nav .navhead.active").forEach(head=>head.classList.remove("active"));
+  if(isOpen){
+    selectedGroup.classList.remove("open");
+  }else{
+    selectedGroup.classList.add("open");
+    h.classList.add("active");
+  }
+}
 function showPage(p){
   const r=ROLES[currentRole]; const allowed=(r.pages==="ALL")?ALL_PAGES:r.pages;
   if(!allowed.includes(p)){toast("صلاحية محدودة","لا تملك صلاحية الوصول لهذا القسم بهذا الدور.","a");return;}
@@ -1744,7 +1759,14 @@ function showPage(p){
   document.getElementById(p).classList.remove("hidden");
   document.getElementById("pageTitle").textContent=titles[p];
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===p));
-  const _ab=document.querySelector('#nav button[data-page="'+p+'"]'); const _gp=_ab&&_ab.closest(".navgroup"); if(_gp)_gp.classList.add("open");
+  document.querySelectorAll("#nav .navgroup").forEach(group=>group.classList.remove("open"));
+  document.querySelectorAll("#nav .navhead").forEach(head=>head.classList.remove("active"));
+  const _ab=document.querySelector('#nav button[data-page="'+p+'"]');
+  const _gp=_ab&&_ab.closest(".navgroup");
+  if(_gp){
+    _gp.classList.add("open");
+    const _head=_gp.querySelector(".navhead"); if(_head)_head.classList.add("active");
+  }
   if(p==="cinbox")renderInbox();
   if(p==="notifications"){unread=0;updateBell();}
   window.scrollTo(0,0);
