@@ -1423,7 +1423,8 @@ function recordCrossing(st,method){
   if(!st) return false;
   method=GATE_METHODS[method]?method:"manual";
   const direction=GATE_DIRECTION;
-  const t=new Date(), hm=pad(t.getHours())+":"+pad(t.getMinutes());
+  const t=new Date(), hm=pad(t.getHours())+":"+pad(t.getMinutes())+":"+pad(t.getSeconds());
+  const capturedAt=t.toISOString();
   const isLate=direction=== "entry" && isLateAt(t), day=isoOf(t);
   const crossingToday=(Array.isArray(GATE_ALL)?GATE_ALL:[])
     .filter(x=>x.student_id===st.id&&String(x.day||"")===day)
@@ -1445,7 +1446,7 @@ function recordCrossing(st,method){
   const clientId=newClientId();
   gateLog.unshift({time:hm,name:st.name,cls:st.cls,late:isLate,method,day,clientId,direction});
   GATE_DAY=day;
-  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,day,late:isLate,method,client_id:clientId,direction}));
+  enqueue("gate_log", rowFor("gate_log",{student_id:st.id,at_time:hm,captured_at:capturedAt,day,late:isLate,method,client_id:clientId,direction}));
   if(canRecord(currentRole)&&direction=== "entry")
     enqueue("attendance", rowFor("attendance",{student_id:st.id,day,state:st.state,at_time:hm,entry_time:hm}));
   else if(canRecord(currentRole)&&direction=== "exit")
@@ -3290,7 +3291,7 @@ const SYNC = {
    كل عنصر: {clientId, table, row, ts, tries}. الخادم يُزيل التكرار عبر
    الفهرس الفريد على client_id — فإعادة الإرسال بعد انقطاع آمنة، وهذا
    **سبب وجود client_id في المخطّط** لا زخرفة. */
-const QUEUE_KEY="eduvia-queue-v1", QUEUE_MAX=2000;
+const QUEUE_KEY="eduvia-queue-v1", QUEUE_MAX=10000;
 function loadQueue(){
   try{ const r=localStorage.getItem(QUEUE_KEY); const a=r?JSON.parse(r):[];
        return Array.isArray(a)?a:[]; }catch(e){ return []; }
@@ -3323,7 +3324,16 @@ function enqueue(table,row,opts){
     item.row=Object.assign({},row,{client_id:cid});
   }
 
-  QUEUE.push(item); saveQueue(); renderSyncChip();
+  if(table=== "gate_log"){
+    /* عبور البوابة أولًا: نجعل أحداث البوابة تتقدّم على الإشعارات
+       والعمليات الأخرى حتى عند ازدحام 200 تلميذة. الترتيب داخل سجلات البوابة
+       يبقى زمنيًا (كل عبور يدخل بعد الذي قبله). */
+    const firstOther=QUEUE.findIndex(q=>q.table!=="gate_log");
+    if(firstOther>=0) QUEUE.splice(firstOther,0,item); else QUEUE.push(item);
+  }else{
+    QUEUE.push(item);
+  }
+  saveQueue(); renderSyncChip();
   if(SYNC.mode==="remote" && SYNC.online) scheduleFlush(800);
   return item;
 }
@@ -3608,6 +3618,39 @@ async function flushQueue(){
   let sawNewStudent=false, dropped=0, deniedDel=0;
   try{
     while(QUEUE.length){
+      /* دفعات عبور البوابة: حتى 100 عبور في طلب واحد، مع حفظ ثواني/مِلّي ثانية
+         كلّ حدث عبر captured_at، وحماية client_id تمنع تكرار إعادة المحاولة. */
+      if(QUEUE[0].table=== "gate_log"){
+        const batch=[];
+        while(batch.length<100 && QUEUE[batch.length] && QUEUE[batch.length].table=== "gate_log")
+          batch.push(QUEUE[batch.length]);
+        let rows=batch.map(it=>Object.assign({},it.row));
+        if(rows[0] && rows[0].method && !(await ensureGateMethod(client))){
+          rows=rows.map(row=>{const r=Object.assign({},row); delete r.method; return r;});
+        }
+        let r=await client.from("gate_log").upsert(rows,
+          {onConflict:"client_id",ignoreDuplicates:true});
+        /* مخطّط قديم لا يعرّف العمود الدقيق أو يفشل matching جزئيًا. */
+        if(r.error && /captured_at/i.test(r.error.message||r.error.details||"") && /^(42703|PGRST204)$/.test(r.error.code||"")){
+          rows=rows.map(row=>{const r=Object.assign({},row); delete r.captured_at; return r;});
+          r=await client.from("gate_log").upsert(rows,{onConflict:"client_id",ignoreDuplicates:true});
+        }
+        if(r.error && r.error.code=== "42P10"){
+          /* الفهرس القديم جزءي: نرسل كل صفّ مستقلًا للحارس الوحيد client_id. */
+          let fallbackError=null;
+          for(const row of rows){
+            const s=await client.from("gate_log").insert(row);
+            if(s.error && s.error.code!== "23505" && !/duplicate|already exists/i.test(s.error.message||"")) fallbackError=s.error;
+          }
+          r=fallbackError?{error:fallbackError}:{error:null};
+        }
+        if(r.error){
+          const first=batch[0]; first.tries=(first.tries||0)+1; first.lastError=String(r.error.message||r.error); SYNC.lastError=first.lastError; saveQueue();
+          break;
+        }
+        QUEUE.splice(0,batch.length); saveQueue(); SYNC.lastSync=new Date(); SYNC.lastError=null;
+        continue;
+      }
       const it=QUEUE[0];
       let error=null, affected=null;
 
