@@ -206,6 +206,16 @@ body.has-install #toasts{bottom:78px}
   .parent-app-shell .top-actions{gap:5px}
   .parent-app-shell .top-actions .icon-btn{width:36px;height:36px;padding:0}
   .parent-app-shell .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .parent-app-shell .card{padding:11px 12px;border-radius:13px}
+  .parent-app-shell .card .value{font-size:18px;margin-top:5px;white-space:nowrap}
+  .parent-app-shell .card .label{font-size:11px}
+  .parent-gate-status{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px}
+  .parent-gate-status .gate-event{display:flex;align-items:center;justify-content:space-between;gap:8px;border-radius:14px;padding:12px;border:1px solid var(--border);background:var(--surface);min-width:0}
+  .parent-gate-status .gate-event b{font-size:13px;white-space:nowrap}
+  .parent-gate-status .gate-event strong{font-size:18px;direction:ltr;white-space:nowrap}
+  .parent-home-summary{display:flex;gap:8px;overflow:hidden;margin-bottom:10px}
+  .parent-home-summary .card{min-width:0;flex:1}
+  .parent-home-summary .card .value{font-size:15px}
   .parent-app-shell .grid2{grid-template-columns:1fr;gap:10px}
   .parent-app-shell .panel{padding:14px;border-radius:16px}
   .parent-app-shell .section-head{gap:8px}
@@ -400,12 +410,12 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     <div class="navgroup">
       <button class="navhead" onclick="toggleGroup(this)"><span class="ic">👨‍👩‍👧</span> متابعة ابنتي <span class="chev">▾</span></button>
       <div class="navsub">
-        <button data-page="phome"><span class="ic">🏠</span> نظرة عامة</button>
-        <button data-page="pattendance"><span class="ic">🗓️</span> الحضور والغياب</button>
-        <button data-page="pgrades"><span class="ic">📊</span> النقاط والمعدّلات</button>
-        <button data-page="pwork"><span class="ic">📚</span> الواجبات المنزلية</button>
-        <button data-page="pnotes"><span class="ic">📌</span> السلوك والملاحظات</button>
+        <button data-page="pattendance"><span class="ic">🚪</span> الدخول والخروج</button>
         <button data-page="psummon"><span class="ic">📨</span> الاستدعاءات</button>
+        <button data-page="pwork"><span class="ic">📚</span> الواجبات المنزلية</button>
+        <button data-page="phome"><span class="ic">🏠</span> نظرة ابنتي</button>
+        <button data-page="pgrades"><span class="ic">📊</span> النقاط والمعدّلات</button>
+        <button data-page="pnotes"><span class="ic">📌</span> السلوك والملاحظات</button>
         <button data-page="pannounce"><span class="ic">📢</span> الإعلانات</button>
         <button data-page="paccount"><span class="ic">⚙️</span> حسابي واشتراكي</button>
       </div>
@@ -1833,7 +1843,7 @@ const ROLES={
   student:{label:"التلميذ",ic:"🎒",pages:["shome","sgrades","sattendance","stimetable","swork","snotes","ssummons","sannounce","complaints"]},
   /* وليّ الأمر يرى **ابنته** لا لوحة إدارة: صفحاته كلّها `p…` ولا تشمل
      صفحةً إداريّة واحدة. والاختبار الساكن يمنع تسرّب أيٍّ منها إليه. */
-  parent:{label:"وليّ الأمر",ic:"👨‍👩‍👧",pages:["phome","pattendance","pgrades","pwork","pnotes","psummon","pannounce","paccount"]}
+  parent:{label:"وليّ الأمر",ic:"👨‍👩‍👧",pages:["pattendance","psummon","pwork","phome","pgrades","pnotes","pannounce","paccount"]}
 };
 const ALL_PAGES=["dashboard","students","classes","teachers","cards","attendance","gate","grades","timetable","thub","calendar","parents","announcements","cinbox","summons","notifications","stats","reports","settings"];
 let currentRole="director";
@@ -2728,7 +2738,7 @@ function renderStudentWing(){
    معرِّفًا من الخادم (`profiles.student_id` تبقى null للوليّ، والربط في
    `guardians`). والخطاب بضمير الغائب («ابنتها») لا المتكلّم («أنا») — وهذا
    كلّ الفرق بين هذه الدالّة وشقيقتها `renderStudentWing`. */
-const PARENT_PAGES=["phome","pattendance","pgrades","pwork","pnotes","psummon","pannounce","paccount"];
+const PARENT_PAGES=["pattendance","psummon","pwork","phome","pgrades","pnotes","pannounce","paccount"];
 /* حسابٌ بلا تلميذةٍ مرتبطة: الصدق أن نقولها، لا أن نعرض بيانات تلميذاتٍ
    أخريات وهي ما كان يقع — الشرائح المحلّية تبقى فتبدو «ابنته». */
 function unlinkedHTML(){
@@ -2872,6 +2882,26 @@ function parentFeaturesTableHTML(){
 function parentPaidLockedHTML(service){
   return `<div class="panel"><h2>🔒 ${esc(service)}</h2><div class="notice y"><b>هذه الخدمة متاحة للحساب المدفوع فقط.</b><br>حسابك مجاني حاليًا، ويظل تنبيه الدخول والتأخر والغياب والاستدعاء متاحًا مجانًا.</div><button class="btn primary" style="margin-top:8px" onclick="showPage('paccount')">عرض اشتراكات الحساب</button></div>`;
 }
+function parentGateStatus(st){
+  const day=todayISO();
+  const events=[];
+  (Array.isArray(GATE_ALL)?GATE_ALL:[]).forEach(r=>{
+    if(String(r.day||"")===day && String(r.name||"")===String(st.name||""))
+      events.push({time:String(r.time||""),direction:String(r.direction||"entry")});
+  });
+  (Array.isArray(gateLog)?gateLog:[]).forEach(r=>{
+    if(String(r.day||day)===day && String(r.name||"")===String(st.name||""))
+      events.push({time:String(r.time||""),direction:String(r.direction||"entry")});
+  });
+  events.sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
+  const entries=events.filter(e=>e.direction=== "entry" && e.time);
+  const exits=events.filter(e=>e.direction=== "exit" && e.time);
+  const entry=entries.length?entries[entries.length-1].time:(String(st.time||"")||"");
+  const exit=exits.length?exits[exits.length-1].time:"";
+  if(!entry && !exit) return {entry:"—",exit:"—",status:"لم يُسجّل عبورها اليوم"};
+  if(exit && (!entry || exit.localeCompare(entry)>=0)) return {entry:entry||"—",exit,status:"غادرت المؤسسة"};
+  return {entry:entry||"—",exit:exit||"—",status:"موجودة داخل المؤسسة"};
+}
 function renderParentWing(){
   ensureParentFreeStatus();
   const trial=document.getElementById("trial");
@@ -2881,30 +2911,39 @@ function renderParentWing(){
   const r=studentRank(st,0);
   const smiss=marksMissing(st.id,0);
   const sub=SYNC.subscription;
+  const gateStatus=parentGateStatus(st);
+  const latestSummons=SUMMONS.filter(x=>x.sid===st.id).slice(0,2);
+  const latestHomework=HOMEWORK.filter(h=>h.cls===st.cls||h.cls=== "الكل").slice(0,2);
   document.getElementById("phome").innerHTML=`
-    <div class="hero"><div class="htxt"><b>متابعة ${esc(st.name)} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${esc(st.cls)} · ${esc(CURRENT_SCHOOL)}</p></div></div>
-    ${parentSubscriptionBannerHTML()}
-    ${parentFeaturesTableHTML()}
-    <div class="cards" style="grid-template-columns:repeat(${parentSubscriptionPaid()?"4":"2"},1fr)">
-      ${kpiCard("نسبة حضورها","🗓️",pctTxt(st.attRate),"green")}
-      ${parentSubscriptionPaid()?kpiCard("معدّلها العام","🎯",st.avg[0]+" /10","blue")+kpiCard("رتبتها في القسم","🏅",r.rank+" / "+r.total,""):""}
-      ${kpiCard("أيام غيابها","🚫",st.absDays,"red")}
+    <div class="hero"><div class="htxt"><b>متابعة ${esc(st.name)} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${esc(st.cls)}</p></div></div>
+    <div class="panel" style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><h2 style="margin:0">🚪 الدخول والخروج اليوم</h2><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
+      <div class="parent-gate-status">
+        <div class="gate-event"><b>🟢 الدخول</b><strong>${ltr(gateStatus.entry)}</strong></div>
+        <div class="gate-event"><b>🔴 الخروج</b><strong>${ltr(gateStatus.exit)}</strong></div>
+      </div>
+    </div>
+    <div class="parent-home-summary">
+      <div class="card"><div class="label">✅ الحضور</div><div class="value green">${pctTxt(st.attRate)}</div></div>
+      <div class="card"><div class="label">🚫 الغياب المسجّل</div><div class="value red">${st.absDays}</div></div>
     </div>
     <div class="grid2">
-      <div class="panel"><h2>🕐 حالتها اليوم</h2>
-        <div class="notice b">${pill(st.state)} ${st.time?"· "+ltr(st.time):""}</div>
-        <div class="muted" style="margin-top:6px">يتغيّر هذا لحظة تسجيل الحضور في المؤسسة.</div></div>
-      <div class="panel"><h2>📢 آخر الإعلانات</h2>${announcements.slice(0,3).map(a=>`<div class="notice b"><b>${esc(a.title)}</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">${esc(a.body)}</div></div>`).join("")||'<div class="muted">لا إعلانات منشورة بعد.</div>'}</div>
+      <div class="panel"><h2>📨 الاستدعاءات</h2>${latestSummons.map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا استدعاءات حاليًا.</div>'}</div>
+      <div class="panel"><h2>📚 الواجبات القريبة</h2>${latestHomework.map(h=>`<div class="notice b"><b>${esc(h.subj)} · ${esc(h.due)}</b><div style="font-size:12.5px;margin-top:4px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}</div>
     </div>`;
   document.getElementById("pattendance").innerHTML=`
-    <div class="panel"><h2>🗓️ الحضور والغياب</h2>
-      <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+    <div class="panel"><h2>🚪 دخول وخروج ${esc(st.name)}</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span><span class="muted">اليوم</span></div>
+      <div class="parent-gate-status">
+        <div class="gate-event"><b>🟢 وصل إلى المدرسة</b><strong>${ltr(gateStatus.entry)}</strong></div>
+        <div class="gate-event"><b>🔴 غادرت المدرسة</b><strong>${ltr(gateStatus.exit)}</strong></div>
+      </div>
+      <div class="notice b">حالة الحضور: ${pill(st.state)}</div>
+      <div class="muted" style="margin-top:8px">يتم تحديث الدخول والخروج مباشرة عند مرور ${esc(st.name)} من البوابة.</div>
+      <div class="cards" style="grid-template-columns:repeat(2,1fr);margin-top:12px;margin-bottom:0">
         ${kpiCard("نسبة الحضور","✅",pctTxt(st.attRate),"green")}
         ${kpiCard("أيام الغياب","🚫",st.absDays,"red")}
-        ${kpiCard("حالة اليوم","🕐",st.time?ltr(st.time):"—","")}
       </div>
-      <div class="notice b">حالة ${esc(st.name)} اليوم: ${pill(st.state)}</div>
-      <div class="muted" style="margin-top:8px">النسبة تُحسَب على الأيام <b>المُسجَّلة</b> وحدها، ويُعرَض «—» إن لم يُسجَّل شيء بعد.</div>
     </div>`;
   document.getElementById("pgrades").innerHTML=parentSubscriptionPaid()?`
     <div class="panel"><div class="section-head"><h2>📊 نقاط ${esc(st.name)} — الفصل الأول</h2><button class="btn" onclick="printReportCard(${st.id})">🖨️ كشف النقاط</button></div>
@@ -4406,9 +4445,9 @@ if(SYNC.mode==="remote" && QUEUE.length) scheduleFlush(1500);
   nav.className="parent-mobile-nav";
   nav.setAttribute("aria-label","تنقل تطبيق وليّ الأمر");
   nav.innerHTML=`
-    <button type="button" data-parent-page="phome" class="active"><span>🏠</span><b>نظرة عامة</b></button>
-    <button type="button" data-parent-page="pattendance"><span>🗓️</span><b>الحضور</b></button>
-    <button type="button" data-parent-page="pgrades"><span>📊</span><b>النقاط</b></button>
+    <button type="button" data-parent-page="pattendance" class="active"><span>🚪</span><b>الدخول والخروج</b></button>
+    <button type="button" data-parent-page="psummon"><span>📨</span><b>الاستدعاءات</b></button>
+    <button type="button" data-parent-page="pwork"><span>📚</span><b>الواجبات</b></button>
     <button type="button" data-parent-more="true"><span>☰</span><b>المزيد</b></button>`;
   document.body.appendChild(nav);
 
@@ -4418,11 +4457,11 @@ if(SYNC.mode==="remote" && QUEUE.length) scheduleFlush(1500);
   sheet.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="أقسام وليّ الأمر">
     <div class="sheet-head"><span>المزيد من الأقسام</span><button type="button" data-parent-close="true" aria-label="إغلاق">✕</button></div>
     <div class="sheet-grid">
-      <button type="button" data-parent-page="pwork"><span>📚</span><b>الواجبات</b></button>
-      <button type="button" data-parent-page="pnotes"><span>📌</span><b>السلوك والملاحظات</b></button>
-      <button type="button" data-parent-page="psummon"><span>📨</span><b>الاستدعاءات</b></button>
+      <button type="button" data-parent-page="phome"><span>🏠</span><b>نظرة ابنتي</b></button>
+      <button type="button" data-parent-page="pgrades"><span>📊</span><b>النقاط والمعدّل</b></button>
       <button type="button" data-parent-page="pannounce"><span>📢</span><b>الإعلانات</b></button>
-      <button type="button" data-parent-page="paccount"><span>⚙️</span><b>حسابي</b></button>
+      <button type="button" data-parent-page="pnotes"><span>📌</span><b>السلوك والملاحظات</b></button>
+      <button type="button" data-parent-page="paccount"><span>⚙️</span><b>حسابي واشتراكي</b></button>
     </div>
   </div>`;
   document.body.appendChild(sheet);
@@ -4439,7 +4478,7 @@ function syncParentBottomNav(page){
   if(!nav)return;
   nav.querySelectorAll("button[data-parent-page]").forEach(button=>button.classList.toggle("active",button.dataset.parentPage===page));
   const more=nav.querySelector("[data-parent-more]");
-  if(more) more.classList.toggle("active",["pwork","pnotes","psummon","pannounce","paccount"].includes(page));
+  if(more) more.classList.toggle("active",["phome","pgrades","pnotes","pannounce","paccount"].includes(page));
 }
 
 /* ================= PWA: تثبيت التطبيق على الهاتف =================
