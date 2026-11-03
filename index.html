@@ -213,10 +213,10 @@ body.has-install #toasts{bottom:78px}
   .parent-gate-status .gate-event{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border-radius:14px;padding:12px;border:1px solid var(--border);background:var(--surface);min-width:0;direction:rtl}
   .parent-gate-status .gate-event b{font-size:13px;white-space:normal;line-height:1.5}
   .parent-gate-status .gate-event strong{font-size:17px;direction:ltr;white-space:nowrap;font-variant-numeric:tabular-nums}
-  .parent-welcome-card{background:linear-gradient(135deg,#fb7185 0%,#ec4899 48%,#be185d 100%)!important;border:1px solid rgba(190,24,93,.28)!important;color:#fff!important;padding:14px!important;margin-bottom:10px!important;border-radius:18px!important;box-shadow:0 8px 20px rgba(236,72,153,.18)!important}
+  .parent-welcome-card{background:linear-gradient(135deg,#22c55e 0%,#16a34a 48%,#166534 100%)!important;border:1px solid rgba(21,128,61,.38)!important;color:#fff!important;padding:14px!important;margin-bottom:10px!important;border-radius:18px!important;box-shadow:0 8px 20px rgba(22,163,74,.24)!important}
   .parent-welcome-card b{display:block;font-size:17px;line-height:1.35}
-  .parent-welcome-card span{display:block;margin-top:4px;font-size:13px;color:#fff0f6;line-height:1.45}
-  .parent-welcome-card p{margin:4px 0 0;font-size:12px;color:#fff0f6}
+  .parent-welcome-card span{display:block;margin-top:4px;font-size:13px;color:#ecfdf5;line-height:1.45}
+  .parent-welcome-card p{margin:4px 0 0;font-size:12px;color:#dcfce7}
   .parent-today-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#64748b;font-size:12px}
   .parent-today-bar strong{direction:ltr;color:#334155;font-size:15px;font-variant-numeric:tabular-nums}
   .parent-inspiration{background:linear-gradient(135deg,#fff7ed,#fefce8)!important;border-color:#fde68a!important;text-align:center;color:#7c2d12!important;line-height:1.9!important}
@@ -1044,6 +1044,7 @@ function pill(state){
    `attendance` نفسها. (كانت الأيام الأربعة الماضية أرقامًا مكتوبة في الكود
    `[93.5,92.1,95.2,91.8]` تُعرَض كتاريخٍ حقيقيّ للمدرسة.) */
 let ATT_DAYS=[];
+let ATT_ALL=[];
 /* بيان الوضع المحلي وحده: منحنى أسبوع مُصنَّع للعرض التجريبي. مفصولٌ في ثابتٍ
    باسمه كي لا يبقى رقمٌ مُصنَّع داخل دالّة الرسم (فيُظنّ أنّه يُعرَض دائمًا). */
 const DEMO_WEEK=[93.5,92.1,95.2,91.8];
@@ -2920,6 +2921,22 @@ function parentFirstName(st){
   return parts.length?parts[0]:"ابنتي";
 }
 function parentAttendanceStats(st){
+  const attendanceRows=(Array.isArray(ATT_ALL)?ATT_ALL:[]).filter(r=>
+    String(r.student_id||"")===String(st.cloudId||st.id||"")
+  );
+
+  if(attendanceRows.length){
+    const recorded=attendanceRows.length;
+    const arrived=attendanceRows.filter(r=>r.state=== "present" || r.state=== "late").length;
+    const lateCount=attendanceRows.filter(r=>r.state=== "late").length;
+    const absence=attendanceRows.filter(r=>r.state=== "absent").length;
+    return {
+      attendance:Math.round(arrived/recorded*100),
+      lateRate:Math.round(lateCount/recorded*100),
+      absence
+    };
+  }
+
   const events=[];
   (Array.isArray(GATE_ALL)?GATE_ALL:[]).forEach(r=>{
     if(String(r.name||"")===String(st.name||"") && String(r.direction||"entry")=== "entry") events.push(r);
@@ -2932,12 +2949,16 @@ function parentAttendanceStats(st){
     const day=String(r.day||todayISO()).slice(0,10);
     if(!days.has(day)||r.late) days.set(day,r);
   });
-  const entries=[...days.values()];
+  const entries=[...days.values()].filter(r=>r.day && r.time);
   const lateCount=entries.filter(r=>!!r.late).length;
   const attendance=Number.isFinite(Number(st.attRate))?Math.max(0,Math.min(100,Number(st.attRate))):100;
-  return {attendance,
-          lateRate:entries.length?Math.round(lateCount/entries.length*100):0,
-          absence:Number(st.absDays||0)};
+  const absence=Math.max(0,Number(st.absDays||0));
+  const recordedDays=entries.length+absence;
+  return {
+    attendance,
+    lateRate:recordedDays?Math.round(lateCount/recordedDays*100):0,
+    absence
+  };
 }
 function parentTodayLabel(){
   try{return new Intl.DateTimeFormat("ar-DZ",{weekday:"long",year:"numeric",month:"long",day:"numeric"}).format(new Date());}
@@ -4107,6 +4128,7 @@ async function hydrate(){
       ATT_DAYS=Object.keys(byDay).sort().map(d=>({day:d,arr:byDay[d].arr,rec:byDay[d].rec}));
     }
     if(aRows&&aRows.length){
+      ATT_ALL=aRows.map(a=>({student_id:a.student_id,day:String(a.day||"").slice(0,10),state:a.state,at_time:a.at_time||"",entry_time:a.entry_time||"",exit_time:a.exit_time||""}));
       const byS={};
       aRows.forEach(a=>{ (byS[a.student_id]=byS[a.student_id]||[]).push(a); });
       students.forEach(s=>{
