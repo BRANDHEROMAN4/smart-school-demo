@@ -43,6 +43,7 @@ serve(async (req) => {
   if (!userRes.ok) return json({ error: "Invalid session" }, 401);
   const user = await userRes.json();
 
+
   const profileRes = await admin(`/rest/v1/profiles?id=eq.${user.id}&select=id,school_id,role`);
   const profiles = await profileRes.json();
   const profile = profiles?.[0];
@@ -110,7 +111,7 @@ serve(async (req) => {
   await admin("/rest/v1/parent_credential_issuances", {
     method: "POST",
     headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({ school_id: profile.school_id, profile_id: authUserId, login_id: phone, display_name: displayName, action: reset ? "reset" : "issued", issued_by: user.id }),
+    body: JSON.stringify({ school_id: profile.school_id, profile_id: authUserId, login_id: phone, display_name: displayName, action: reset ? "reset" : "issued", issued_by: user.id, current_pin: pin }),
   });
 
   return json({ phone, pin, loginId: phone, displayName });

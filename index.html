@@ -566,7 +566,7 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
     </div>
     <div class="panel" id="directorParentCredentials" style="display:none">
       <h2>🔐 أرقام دخول أولياء الأمر</h2>
-      <p class="muted" style="margin-top:0">تظهر هذه الميزة للمديرة فقط. تُسمّى عملية الإصدار أو التجديد، ويظهر الرمز الجديد مرة واحدة.</p>
+      <p class="muted" style="margin-top:0">تظهر هذه الميزة للمديرة فقط. يخزن الرمز الحالي ويُعرض مخفيًا؛ اضغطي على العين لإظهاره أو إخفائه.</p>
       <div class="actions" style="gap:8px;flex-wrap:wrap">
         <input id="credentialParentName" class="search" style="min-width:220px" placeholder="اسم وليّ الأمر" aria-label="اسم وليّ الأمر">
         <input id="credentialParentPhone" class="search" style="min-width:220px;direction:ltr;text-align:center" placeholder="رقم الهاتف 0555123456" inputmode="tel" aria-label="رقم هاتف وليّ الأمر">
@@ -1683,19 +1683,55 @@ async function issueParentCredential(phone,displayName,reset=true,silent=false){
     const {data,error}=await client.functions.invoke("provision-parent",{body:{phone:login,displayName:name,reset}});
     if(error) throw error;
     if(!data?.pin) throw new Error("لم يرجع الخادم رمزًا");
-    const list=document.getElementById("credentialAdminList");
-    if(list) list.innerHTML=`<div class="panel" style="border:2px solid #25b565;margin:0;padding:12px"><b>${esc(name)}</b><br><span class="muted">رقم الدخول: </span><span class="code">${esc(login)}</span><br><span class="muted">الرمز الجديد: </span><strong style="font-size:22px;direction:ltr;display:inline-block">${esc(data.pin)}</strong><button class="btn" style="margin-inline-start:10px" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(data.pin)}')">نسخ</button></div>`;
+    cacheParentCredential({loginId:login,displayName:name,pin:data.pin,action:reset?"reset":"issued",issuedAt:new Date().toISOString()});
+    renderParentCredentialList();
     toast(reset?"تم تجديد رمز وليّ الأمر 🔐":"تم إنشاء حساب وليّ الأمر 🔐",`رقم الدخول: ${login} · الرمز: ${data.pin}`,"g");
     await refreshParentCredentialLog();
   }catch(e){ toast("تعذّر إنشاء الحساب",String(e?.message||e),"a"); }
 }
+const PARENT_CREDENTIAL_CACHE_KEY="eduvia.parentCredentials.v1";
+
+function readParentCredentialCache(){
+  try{ return JSON.parse(localStorage.getItem(PARENT_CREDENTIAL_CACHE_KEY)||"[]")||[]; }
+  catch(e){ return []; }
+}
+function cacheParentCredential(row){
+  if(!row?.loginId||!/^\d{6}$/.test(String(row.pin||""))) return;
+  const rows=readParentCredentialCache();
+  const next=[row,...rows.filter(r=>r.loginId!==row.loginId)].slice(0,100);
+  try{ localStorage.setItem(PARENT_CREDENTIAL_CACHE_KEY,JSON.stringify(next)); }catch(e){ }
+}
+function toggleParentCredentialPin(loginId){
+  const el=document.querySelector(`[data-parent-pin="${CSS.escape(loginId)}"]`);
+  if(!el) return;
+  const visible=el.dataset.visible=== "true";
+  el.textContent=visible?"••••••":el.dataset.pin;
+  el.dataset.visible=visible?"false":"true";
+  const btn=document.querySelector(`[data-parent-eye="${CSS.escape(loginId)}"]`);
+  if(btn){ btn.textContent=visible?"👁":"🙈"; btn.setAttribute("aria-label",visible?"إظهار الرمز":"إخفاء الرمز"); }
+}
+function renderParentCredentialList(){
+  if(currentRole!=="director") return;
+  const list=document.getElementById("credentialAdminList"); if(!list) return;
+  const rows=readParentCredentialCache();
+  list.innerHTML=rows.length?rows.map(r=>{
+    const eye=r.pin?`<button type="button" class="btn" data-parent-eye="${esc(r.loginId)}" aria-label="إظهار الرمز" onclick="toggleParentCredentialPin('${esc(r.loginId)}')" style="min-width:42px">👁</button>`:"";
+    return `<div class="panel" style="margin:0 0 8px;padding:12px"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><b>${esc(r.displayName||"")}</b><br><span class="muted">رقم الدخول: </span><span class="code">${esc(r.loginId)}</span></div><div style="direction:ltr;text-align:center"><span class="muted" style="direction:rtl">الرمز: </span><strong data-parent-pin="${esc(r.loginId)}" data-pin="${esc(r.pin||"")}" data-visible="false" style="font-size:20px;letter-spacing:4px">${r.pin?"••••••":"غير متاح"}</strong> ${eye}</div></div><div class="muted" style="margin-top:6px;font-size:12px">${r.action=== "reset"?"تجديد":"إصدار"} · ${r.issuedAt?new Date(r.issuedAt).toLocaleString("ar-DZ"):""}</div></div>`;
+  }).join(""):"<div class=\"muted\">لا توجد رموز محفوظة بعد.</div>";
+}
 async function refreshParentCredentialLog(){
   if(currentRole!=="director") return;
-  const client=await ensureClient(); if(!client) return;
-  const {data,error}=await client.from("parent_credential_issuances").select("login_id,display_name,action,issued_at").order("issued_at",{ascending:false}).limit(20);
-  const list=document.getElementById("credentialAdminList"); if(!list||error) return;
-  const existing=list.querySelector("strong")?list.innerHTML:"";
-  list.innerHTML=existing+(data||[]).map(r=>`<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px"><span>${esc(r.display_name)} <span class="code">${esc(r.login_id)}</span></span><span class="muted">${r.action=== "reset"?"تجديد":"إصدار"} · ${new Date(r.issued_at).toLocaleString("ar-DZ")}</span></div>`).join("");
+  const client=await ensureClient(); if(!client){ renderParentCredentialList(); return; }
+  const {data,error}=await client.from("parent_credential_issuances").select("login_id,display_name,action,issued_at,current_pin").order("issued_at",{ascending:false}).limit(100);
+  if(!error){
+    const seen=new Set();
+    for(const r of data||[]){
+      if(seen.has(r.login_id)) continue;
+      seen.add(r.login_id);
+      cacheParentCredential({loginId:r.login_id,displayName:r.display_name,pin:r.current_pin,action:r.action,issuedAt:r.issued_at});
+    }
+  }
+  renderParentCredentialList();
 }
 
 /* ================= التنقّل / المظهر / الأدوات ================= */
@@ -3763,12 +3799,15 @@ async function hydrate(){
 
     if(sRows===null) return {ok:false,reason:"students-failed",errs};
 
-    /* وليٌّ أو تلميذة **بلا صفٍّ في `guardians`**: الخادم يُعيد صفرًا بلا خطأ،
-       وكانت الشرائح المحلّية تبقى مكانها فيرى **تلميذات التجربة** على أنّهنّ
-       ابنتُه. الصمت هنا ليس «لا بيانات» — بل بياناتُ غيرِه. */
+    /* وليٌّ أو تلميذة بلا صفٍّ في `guardians`: الخادم يُعيد صفرًا بلا خطأ.
+       لا نُفرِّغ هنا مصفوفة `students` ولا سجلات المنصّة الأخرى؛ قائمة المدير
+       وسجلات السلوك والواجبات والاستدعاءات مستقلة عن هذا الجلب المحدود.
+       نَحدّث فقط مؤشر التلميذة المرتبطة، حتى لا تنتقل بيانات التجربة إلى حسابٍ غير مرتبط. */
     if(sRows&&!sRows.length&&(currentRole==="parent"||currentRole==="student")){
-      students=[]; NOTES=[]; HOMEWORK=[]; SUMMONS=[];
       SYNC.unlinked=true;
+      meStudent=null;
+    }else if(sRows&&sRows.length){
+      SYNC.unlinked=false;
     }
 
     /* ---------- ① التلاميذ — الهوية الحقيقية ---------- */
@@ -3826,6 +3865,13 @@ async function hydrate(){
         if(!BOOK[k]) BOOK[k]={acc:"avg",entries:[]};
         if(!BOOK[k].entries.some(e=>e.clientId===h.entry.clientId)) BOOK[k].entries.push(h.entry);
       });
+      /* حدّث مرجع التلميذة المرتبط بعد استبدال المصفوفة الجديدة من الخادم،
+         بلا استبدال المصفوفة ذاتها بأي شيءٍ آخر عند الإجراءات اللاحقة. */
+      if(currentRole=== "student"||currentRole=== "parent"){
+        meStudent=(CURRENT_USER&&CURRENT_USER.studentId
+          ? students.find(s=>s.cloudId===CURRENT_USER.studentId)
+          : null)||students[0]||null;
+      }
     }
 
     /* ---------- ② النقاط — تُبنى من صفوف الخادم لا من العشوائية ----------

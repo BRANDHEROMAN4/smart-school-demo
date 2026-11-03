@@ -1,0 +1,54 @@
+name: Deploy Supabase Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/deploy-supabase.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify deployment secrets
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing secret: SUPABASE_ACCESS_TOKEN"; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo "Missing secret: SUPABASE_PROJECT_REF"; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo "Missing secret: SUPABASE_DB_PASSWORD"; exit 1; }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Link Supabase project
+        run: |
+          npx supabase@2.122.0 link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Deploy database migrations
+        run: |
+          npx supabase@2.122.0 db push --linked
+
+      - name: Deploy Edge Functions
+        run: |
+          npx supabase@2.122.0 functions deploy provision-parent --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          npx supabase@2.122.0 functions deploy notify-parent --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
