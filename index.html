@@ -219,7 +219,7 @@ body.has-install #toasts{bottom:78px}
   .parent-welcome-card p{margin:4px 0 0;font-size:12px;color:#dcfce7}
   .parent-today-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#64748b;font-size:12px}
   .parent-today-bar strong{direction:ltr;color:#334155;font-size:15px;font-variant-numeric:tabular-nums}
-  .parent-inspiration{position:relative;overflow:hidden;background:linear-gradient(135deg,#eff6ff,#fdf2f8)!important;border:1px solid #bfdbfe!important;text-align:center;color:#1e3a5f!important;line-height:1.8!important;padding:13px 16px!important}
+  .parent-inspiration{display:block!important;position:relative;overflow:hidden;background:linear-gradient(135deg,#eff6ff,#fdf2f8)!important;border:1px solid #bfdbfe!important;text-align:center;color:#1e3a5f!important;line-height:1.8!important;padding:13px 16px!important;min-height:82px;visibility:visible!important;opacity:1!important}
   .parent-inspiration::before{content:"";position:absolute;inset-inline-start:-20px;top:-24px;width:78px;height:78px;border-radius:50%;background:rgba(96,165,250,.14)}
   .parent-inspiration .inspiration-label{display:block;margin-bottom:5px;color:#2563eb;font-size:11px;font-weight:800;letter-spacing:.1px}
   .parent-inspiration b{display:block;font-family:"Traditional Arabic","Amiri","Noto Naskh Arabic",serif;font-size:18px;font-weight:800}
@@ -3003,7 +3003,7 @@ function renderParentWing(){
   const daily=parentDailyInspiration();
   document.getElementById("phome").innerHTML=`
     <div class="panel parent-welcome-card"><b>متابعة إبنتي ${esc(parentFirstName(st))}</b><span>${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</span><p>معك لحظة وصولها وموعد مغادرتها</p></div>
-    <div class="panel parent-inspiration"><span class="inspiration-label">${esc(daily.icon)} ${esc(daily.label)}</span><b>${esc(daily.text)}</b><small>${esc(daily.note)}</small></div>
+    <div class="panel parent-inspiration" id="parentMorningInspiration" role="note" aria-label="محتوى صباحي"><span class="inspiration-label">${esc(daily.icon)} ${esc(daily.label)}</span><b>${esc(daily.text)}</b><small>${esc(daily.note)}</small></div>
     <div class="panel" style="margin-bottom:10px">
       <div class="parent-today-bar"><span>اليوم</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><h2 style="margin:0">🚪 الدخول والخروج</h2><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
