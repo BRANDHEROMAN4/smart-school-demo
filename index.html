@@ -209,10 +209,18 @@ body.has-install #toasts{bottom:78px}
   .parent-app-shell .card{padding:11px 12px;border-radius:13px}
   .parent-app-shell .card .value{font-size:18px;margin-top:5px;white-space:nowrap}
   .parent-app-shell .card .label{font-size:11px}
-  .parent-gate-status{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px}
-  .parent-gate-status .gate-event{display:flex;align-items:center;justify-content:space-between;gap:8px;border-radius:14px;padding:12px;border:1px solid var(--border);background:var(--surface);min-width:0}
-  .parent-gate-status .gate-event b{font-size:13px;white-space:nowrap}
-  .parent-gate-status .gate-event strong{font-size:18px;direction:ltr;white-space:nowrap}
+  .parent-gate-status{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px}
+  .parent-gate-status .gate-event{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border-radius:14px;padding:12px;border:1px solid var(--border);background:var(--surface);min-width:0;direction:rtl}
+  .parent-gate-status .gate-event b{font-size:13px;white-space:normal;line-height:1.5}
+  .parent-gate-status .gate-event strong{font-size:17px;direction:ltr;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .parent-welcome-card{background:linear-gradient(135deg,#dff5e9,#eefaf3)!important;border:1px solid #9bd4b3!important;color:#166534!important;padding:12px 14px!important;margin-bottom:10px!important;border-radius:16px!important}
+  .parent-welcome-card b{display:block;font-size:16px;line-height:1.55}
+  .parent-welcome-card p{margin:2px 0 0;font-size:13px;color:#3f7654}
+  .parent-today-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#64748b;font-size:12px}
+  .parent-today-bar strong{direction:ltr;color:#334155;font-size:13px;font-variant-numeric:tabular-nums}
+  .parent-inspiration{background:linear-gradient(135deg,#fff7ed,#fefce8)!important;border-color:#fde68a!important;text-align:center;color:#7c2d12!important;line-height:1.9!important}
+  .parent-inspiration b{display:block;font-family:"Traditional Arabic","Amiri","Noto Naskh Arabic",serif;font-size:17px;font-weight:700}
+  .parent-inspiration small{display:block;margin-top:4px;color:#a16207;font-size:11px}
   .parent-home-summary{display:flex;gap:8px;overflow:hidden;margin-bottom:10px}
   .parent-home-summary .card{min-width:0;flex:1}
   .parent-home-summary .card .value{font-size:15px}
@@ -413,7 +421,6 @@ html[data-theme="dark"] .tt .s1,html[data-theme="dark"] .tt .s2,html[data-theme=
         <button data-page="pattendance"><span class="ic">🚪</span> الدخول والخروج</button>
         <button data-page="psummon"><span class="ic">📨</span> الاستدعاءات</button>
         <button data-page="pwork"><span class="ic">📚</span> الواجبات المنزلية</button>
-        <button data-page="phome"><span class="ic">🏠</span> نظرة ابنتي</button>
         <button data-page="pgrades"><span class="ic">📊</span> النقاط والمعدّلات</button>
         <button data-page="pnotes"><span class="ic">📌</span> السلوك والملاحظات</button>
         <button data-page="pannounce"><span class="ic">📢</span> الإعلانات</button>
@@ -2902,6 +2909,36 @@ function parentGateStatus(st){
   if(exit && (!entry || exit.localeCompare(entry)>=0)) return {entry:entry||"—",exit,status:"غادرت المؤسسة"};
   return {entry:entry||"—",exit:exit||"—",status:"موجودة داخل المؤسسة"};
 }
+function parentFirstName(st){
+  const parts=String(st?.name||"").trim().split(/\s+/).filter(Boolean);
+  return parts.length?parts[0]:"ابنتي";
+}
+function parentAttendanceStats(st){
+  const events=[];
+  (Array.isArray(GATE_ALL)?GATE_ALL:[]).forEach(r=>{
+    if(String(r.name||"")===String(st.name||"") && String(r.direction||"entry")=== "entry") events.push(r);
+  });
+  (Array.isArray(gateLog)?gateLog:[]).forEach(r=>{
+    if(String(r.name||"")===String(st.name||"") && String(r.direction||"entry")=== "entry") events.push(r);
+  });
+  const unique=new Map();
+  events.forEach(r=>unique.set(String(r.day||todayISO())+":"+String(r.time||""),r));
+  const entries=[...unique.values()];
+  const lateCount=entries.filter(r=>!!r.late).length;
+  return {attendance:Number.isFinite(Number(st.attRate))?Number(st.attRate):100,
+          lateRate:entries.length?Math.round(lateCount/entries.length*100):0,
+          absence:Number(st.absDays||0)};
+}
+function parentTodayLabel(){
+  try{return new Intl.DateTimeFormat("ar-DZ",{weekday:"long",year:"numeric",month:"long",day:"numeric"}).format(new Date());}
+  catch(e){return new Date().toLocaleDateString("ar-DZ");}
+}
+function parentNowLabel(){return new Intl.DateTimeFormat("ar-DZ",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date());}
+function startParentClock(){
+  if(window.PARENT_CLOCK_TIMER) clearInterval(window.PARENT_CLOCK_TIMER);
+  const update=()=>document.querySelectorAll("[data-parent-clock]").forEach(el=>el.textContent=parentNowLabel());
+  update(); window.PARENT_CLOCK_TIMER=setInterval(update,1000);
+}
 function renderParentWing(){
   ensureParentFreeStatus();
   const trial=document.getElementById("trial");
@@ -2914,35 +2951,39 @@ function renderParentWing(){
   const gateStatus=parentGateStatus(st);
   const latestSummons=SUMMONS.filter(x=>x.sid===st.id).slice(0,2);
   const latestHomework=HOMEWORK.filter(h=>h.cls===st.cls||h.cls=== "الكل").slice(0,2);
+  const parentStats=parentAttendanceStats(st);
   document.getElementById("phome").innerHTML=`
-    <div class="hero"><div class="htxt"><b>متابعة ${esc(st.name)} 👋</b><p>${GRADENAMES[st.grade]} · القسم ${esc(st.cls)}</p></div></div>
+    <div class="panel parent-welcome-card"><b>متابعة ${esc(parentFirstName(st))} ${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</b><p>معك لحظة وصولها وموعد مغادرتها</p></div>
     <div class="panel" style="margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><h2 style="margin:0">🚪 الدخول والخروج اليوم</h2><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
+      <div class="parent-today-bar"><span>اليوم</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><h2 style="margin:0">🚪 الدخول والخروج</h2><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
       <div class="parent-gate-status">
-        <div class="gate-event"><b>🟢 الدخول</b><strong>${ltr(gateStatus.entry)}</strong></div>
-        <div class="gate-event"><b>🔴 الخروج</b><strong>${ltr(gateStatus.exit)}</strong></div>
+        <div class="gate-event"><b>🟢 وصولها إلى المدرسة</b><strong>${ltr(gateStatus.entry)}</strong></div>
+        <div class="gate-event"><b>🔴 مغادرتها المدرسة</b><strong>${ltr(gateStatus.exit)}</strong></div>
       </div>
     </div>
     <div class="parent-home-summary">
-      <div class="card"><div class="label">✅ الحضور</div><div class="value green">${pctTxt(st.attRate)}</div></div>
-      <div class="card"><div class="label">🚫 الغياب المسجّل</div><div class="value red">${st.absDays}</div></div>
+      <div class="card"><div class="label">نسبة الحضور</div><div class="value green">${pctTxt(parentStats.attendance)}</div></div>
+      <div class="card"><div class="label">نسبة التأخير</div><div class="value amber">${parentStats.lateRate}%</div></div>
+      <div class="card"><div class="label">أيام الغياب</div><div class="value red">${parentStats.absence}</div></div>
     </div>
-    <div class="grid2">
-      <div class="panel"><h2>📨 الاستدعاءات</h2>${latestSummons.map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا استدعاءات حاليًا.</div>'}</div>
-      <div class="panel"><h2>📚 الواجبات القريبة</h2>${latestHomework.map(h=>`<div class="notice b"><b>${esc(h.subj)} · ${esc(h.due)}</b><div style="font-size:12.5px;margin-top:4px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}</div>
-    </div>`;
+    <div class="panel"><h2>📨 الاستدعاءات</h2>${latestSummons.map(x=>`<div class="notice y"><b>${esc(x.reason)}</b><div class="muted" style="margin-top:4px">📅 ${esc(x.date)} · ${esc(x.status)}</div></div>`).join("")||'<div class="notice">لا استدعاءات حاليًا.</div>'}</div>
+    <div class="panel parent-inspiration"><b>﴿ وَقُل رَّبِّ زِدْنِي عِلْمًا ﴾</b><small>آية صباحية · صباح الخير، اجعلوا اليوم بداية جميلة للتعلّم</small></div>
+    <div class="panel"><h2>📚 الواجبات القريبة</h2>${latestHomework.map(h=>`<div class="notice b"><b>${esc(h.subj)} · ${esc(h.due)}</b><div style="font-size:12.5px;margin-top:4px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}</div>`;
   document.getElementById("pattendance").innerHTML=`
-    <div class="panel"><h2>🚪 دخول وخروج ${esc(st.name)}</h2>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span><span class="muted">اليوم</span></div>
+    <div class="panel parent-welcome-card"><b>متابعة ${esc(parentFirstName(st))} ${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</b></div>
+    <div class="panel"><h2>🚪 دخول وخروج اليوم</h2>
+      <div class="parent-today-bar"><span>التاريخ والوقت الحالي</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
       <div class="parent-gate-status">
-        <div class="gate-event"><b>🟢 وصل إلى المدرسة</b><strong>${ltr(gateStatus.entry)}</strong></div>
-        <div class="gate-event"><b>🔴 غادرت المدرسة</b><strong>${ltr(gateStatus.exit)}</strong></div>
+        <div class="gate-event"><b>🟢 وصولها إلى المدرسة</b><strong>${ltr(gateStatus.entry)}</strong></div>
+        <div class="gate-event"><b>🔴 مغادرتها المدرسة</b><strong>${ltr(gateStatus.exit)}</strong></div>
       </div>
       <div class="notice b">حالة الحضور: ${pill(st.state)}</div>
-      <div class="muted" style="margin-top:8px">يتم تحديث الدخول والخروج مباشرة عند مرور ${esc(st.name)} من البوابة.</div>
-      <div class="cards" style="grid-template-columns:repeat(2,1fr);margin-top:12px;margin-bottom:0">
-        ${kpiCard("نسبة الحضور","✅",pctTxt(st.attRate),"green")}
-        ${kpiCard("أيام الغياب","🚫",st.absDays,"red")}
+      <div class="parent-home-summary" style="margin-top:10px;margin-bottom:0">
+        <div class="card"><div class="label">الحضور</div><div class="value green">${pctTxt(parentStats.attendance)}</div></div>
+        <div class="card"><div class="label">التأخير</div><div class="value amber">${parentStats.lateRate}%</div></div>
+        <div class="card"><div class="label">الغياب</div><div class="value red">${parentStats.absence}</div></div>
       </div>
     </div>`;
   document.getElementById("pgrades").innerHTML=parentSubscriptionPaid()?`
@@ -2990,6 +3031,7 @@ function renderParentWing(){
     </div>
     <div class="panel"><h2>🔑 الرمز السرّي</h2>
       <div class="muted">الرمز المسلَّم على البطاقة صالح للدخول. لتغييره راجعي الإدارة في هذه المرحلة.</div></div>`;
+  startParentClock();
 }
 function cTargets(){
   const kind=document.getElementById("cKind").value;
@@ -4073,7 +4115,7 @@ async function hydrate(){
       GATE_ALL=glRows.map(r=>{
         const s=students.find(x=>x.cloudId===r.student_id);
         if(!s) return null;
-        return {day:String(r.day||"").slice(0,10),time:r.at_time,name:s.name,cls:s.cls,
+        return {day:String(r.day||"").slice(0,10),time:r.at_time,captured_at:r.captured_at||"",name:s.name,cls:s.cls,
                 late:!!r.late,method:r.method||"",direction:r.direction||"entry"};
       }).filter(Boolean)
         .sort((a,b)=>(b.day+String(b.time)).localeCompare(a.day+String(a.time)));
@@ -4081,7 +4123,7 @@ async function hydrate(){
          الخادم إن وُجدت صفوفٌ لهذا اليوم. */
       const today=GATE_ALL.filter(r=>r.day===todayISO());
       if(today.length){
-        gateLog=today.map(r=>({time:r.time,name:r.name,cls:r.cls,late:r.late,method:r.method}));
+        gateLog=today.map(r=>({time:r.time,capturedAt:r.captured_at||"",name:r.name,cls:r.cls,late:r.late,method:r.method,direction:r.direction||"entry",day:r.day}));
         SYNC.gateFromServer=true;
       }
     }
@@ -4457,7 +4499,6 @@ if(SYNC.mode==="remote" && QUEUE.length) scheduleFlush(1500);
   sheet.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="أقسام وليّ الأمر">
     <div class="sheet-head"><span>المزيد من الأقسام</span><button type="button" data-parent-close="true" aria-label="إغلاق">✕</button></div>
     <div class="sheet-grid">
-      <button type="button" data-parent-page="phome"><span>🏠</span><b>نظرة ابنتي</b></button>
       <button type="button" data-parent-page="pgrades"><span>📊</span><b>النقاط والمعدّل</b></button>
       <button type="button" data-parent-page="pannounce"><span>📢</span><b>الإعلانات</b></button>
       <button type="button" data-parent-page="pnotes"><span>📌</span><b>السلوك والملاحظات</b></button>
