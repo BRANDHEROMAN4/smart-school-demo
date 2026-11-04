@@ -586,6 +586,8 @@ function main() {
       "ولكلّ صفحة قسمٌ في الملف (وإلّا كتب الجناح في عنصرٍ غير موجود فرمى)");
     chk(/function\s+renderParentWing\s*\(/.test(HTML) && countWord("renderParentWing") >= 2,
       "renderParentWing معرَّفة **ومُناداة** (تعريفٌ بلا نداء لا يُظهر شيئًا)");
+    chk(/parentMorningInspirationAttendance/.test(HTML) && /parentDailyInspiration\(\)/.test(HTML),
+      "بطاقة المحتوى الصباحي تظهر داخل الصفحة الافتراضية لدخول وخروج وليّ الأمر، لا في صفحة مخفية فقط");
     chk(/اختيار خطة الاشتراك/.test(HTML) && /requestParentPlan/.test(HTML),
       "جناح وليّ الأمر يعرض خطط الاشتراك ويتيح اختيار خطة دون تفعيلها ذاتيًّا");
     chk(/parentSubscriptionBannerHTML/.test(HTML) && /مقارنة مميزات حساب وليّ الأمر/.test(HTML) && /مجاني مفعّل تلقائيًا/.test(HTML),

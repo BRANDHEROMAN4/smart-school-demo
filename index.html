@@ -3021,6 +3021,7 @@ function renderParentWing(){
     <div class="panel"><h2>📚 الواجبات القريبة</h2>${latestHomework.map(h=>`<div class="notice b"><b>${esc(h.subj)} · ${esc(h.due)}</b><div style="font-size:12.5px;margin-top:4px">${esc(h.title)}</div></div>`).join("")||'<div class="notice">لا واجبات منشورة حاليًا.</div>'}</div>`;
   document.getElementById("pattendance").innerHTML=`
     <div class="panel parent-welcome-card"><b>متابعة إبنتي ${esc(parentFirstName(st))}</b><span>${esc(GRADENAMES[st.grade]||st.grade)} · القسم ${esc(st.cls)}</span></div>
+    <div class="panel parent-inspiration" id="parentMorningInspirationAttendance" role="note" aria-label="محتوى صباحي"><span class="inspiration-label">${esc(daily.icon)} ${esc(daily.label)}</span><b>${esc(daily.text)}</b><small>${esc(daily.note)}</small></div>
     <div class="panel"><h2>🚪 دخول وخروج اليوم</h2>
       <div class="parent-today-bar"><span>التاريخ والوقت الحالي</span><strong>${esc(parentTodayLabel())} · <bdi dir="ltr" data-parent-clock>${esc(parentNowLabel())}</bdi></strong></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><span class="pill ${gateStatus.status.includes("غادرت")?"late":"green"}">${esc(gateStatus.status)}</span></div>
